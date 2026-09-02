@@ -1,5 +1,7 @@
+pub mod codec;
 pub mod constants;
 pub mod error;
+pub mod ipc;
 pub mod pack;
 pub mod paths;
 pub mod store;
