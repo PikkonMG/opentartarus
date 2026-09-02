@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 opentartarus-core = { path = "../opentartarus-core" }
-iced = { version = "0.13", features = ["tokio", "canvas"] }
+iced = { version = "0.13", features = ["tokio", "canvas", "advanced"] }
 tokio = { version = "1", features = ["full"] }
 serde = { workspace = true }
 serde_json = "1"

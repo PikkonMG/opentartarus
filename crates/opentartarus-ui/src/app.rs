@@ -1,8 +1,14 @@
 use crate::client::{self, FixPermissionsOutcome, Outgoing};
+use crate::keys::{
+    capture_window_key, is_combo_id, query_focused_id, submit_record_key_params,
+    submit_record_mouse_params, KeyCapture,
+};
 use crate::theme;
 use iced::futures::channel::mpsc;
 use iced::keyboard::key::Named;
 use iced::keyboard::{self, Key};
+use iced::advanced::widget::Id;
+use iced::mouse;
 use iced::window::{self, Mode};
 use iced::{event, Event, Subscription, Task, Theme};
 use opentartarus_core::constants::{
@@ -72,10 +78,16 @@ pub enum Message {
     StopRecord,
     ClearBinding,
     ComboChanged(String),
-    ComboFocus,
+    RefreshComboFocus,
+    ComboFocusChanged(Option<Id>),
     ComboKey {
         key: Key,
         modifiers: keyboard::Modifiers,
+    },
+    ComboKeyResolved {
+        key: Key,
+        modifiers: keyboard::Modifiers,
+        focused: Option<Id>,
     },
     HoldRepeat(bool),
     MousePick(MouseTarget),
@@ -165,6 +177,9 @@ impl App {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                     Some(Message::ComboKey { key, modifiers })
                 }
+                Event::Mouse(mouse::Event::ButtonPressed(_)) => {
+                    Some(Message::RefreshComboFocus)
+                }
                 _ => None,
             }),
         ])
@@ -249,24 +264,31 @@ impl App {
             }
             Message::ComboChanged(text) => {
                 self.combo_text = text;
-                self.combo_focused = true;
-                Task::none()
+                query_focused_id().map(Message::ComboFocusChanged)
             }
-            Message::ComboFocus => {
-                self.combo_focused = true;
+            Message::RefreshComboFocus => query_focused_id().map(Message::ComboFocusChanged),
+            Message::ComboFocusChanged(id) => {
+                self.combo_focused = is_combo_id(id.as_ref());
                 Task::none()
             }
             Message::ComboKey { key, modifiers } => {
-                if self.combo_focused {
-                    if let Some(token) = map_key_token(&key) {
-                        let mods = map_modifiers(modifiers);
-                        self.combo_text.clear();
-                        self.apply_action(Action::Key {
-                            key: token,
-                            modifiers: mods,
-                        });
-                    }
+                if self.recording {
+                    self.apply_captured_key(&key, modifiers, self.combo_focused);
+                    return Task::none();
                 }
+                query_focused_id().map(move |focused| Message::ComboKeyResolved {
+                    key: key.clone(),
+                    modifiers,
+                    focused,
+                })
+            }
+            Message::ComboKeyResolved {
+                key,
+                modifiers,
+                focused,
+            } => {
+                self.combo_focused = is_combo_id(focused.as_ref());
+                self.apply_captured_key(&key, modifiers, self.combo_focused);
                 Task::none()
             }
             Message::HoldRepeat(enabled) => {
@@ -290,7 +312,12 @@ impl App {
                 Task::none()
             }
             Message::MousePick(target) => {
-                self.apply_action(Action::Mouse { target });
+                if self.recording {
+                    self.send(Method::SubmitRecord, submit_record_mouse_params(&target));
+                    self.recording = false;
+                } else {
+                    self.apply_action(Action::Mouse { target });
+                }
                 Task::none()
             }
             Message::AddMacroStep => {
@@ -454,6 +481,28 @@ impl App {
         }
     }
 
+    fn apply_captured_key(
+        &mut self,
+        key: &Key,
+        modifiers: keyboard::Modifiers,
+        combo_focused: bool,
+    ) {
+        let token = map_key_token(key);
+        let mods = map_modifiers(modifiers);
+        match capture_window_key(self.recording, combo_focused, token, mods) {
+            KeyCapture::SubmitRecord { key, modifiers } => {
+                self.send(Method::SubmitRecord, submit_record_key_params(key, &modifiers));
+                self.recording = false;
+                self.combo_text.clear();
+            }
+            KeyCapture::SetBinding { key, modifiers } => {
+                self.combo_text.clear();
+                self.apply_action(Action::Key { key, modifiers });
+            }
+            KeyCapture::Ignore => {}
+        }
+    }
+
     fn apply_action(&mut self, action: Action) {
         if let (Some(profile_id), Some(key_id)) = (self.profile_id(), self.selected_key) {
             self.bindings.insert(key_id, action.clone());
@@ -508,6 +557,18 @@ impl App {
             }
             Some(Method::StopRecord) => {
                 self.recording = false;
+            }
+            Some(Method::SubmitRecord) => {
+                self.recording = false;
+                if let Ok(key_id) = serde_json::from_value::<KeyId>(
+                    result.get("key_id").cloned().unwrap_or(Value::Null),
+                ) {
+                    if let Ok(action) = serde_json::from_value::<Action>(
+                        result.get("action").cloned().unwrap_or(Value::Null),
+                    ) {
+                        self.bindings.insert(key_id, action);
+                    }
+                }
             }
             _ => {}
         }

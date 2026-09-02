@@ -1,4 +1,5 @@
 use crate::app::{uses_color, App, Banner, LIGHTING_EFFECTS, Message};
+use crate::keys::COMBO_INPUT_ID;
 use crate::keypad::{self, Keypad};
 use crate::theme::{
     self, BIND_PANEL_WIDTH, COLOR_ACCENT, COLOR_BACKGROUND, COLOR_DANGER, COLOR_SURFACE, COLOR_TEXT,
@@ -173,8 +174,8 @@ fn bind_panel(app: &App) -> Element<'_, Message> {
                 .on_press(record_msg)
                 .style(accent_button),
             text_input(theme::COMBO_PLACEHOLDER, &app.combo_text)
-                .on_input(Message::ComboChanged)
-                .on_submit(Message::ComboFocus),
+                .id(iced::widget::text_input::Id::new(COMBO_INPUT_ID))
+                .on_input(Message::ComboChanged),
             button(text(theme::BUTTON_CLEAR))
                 .on_press(Message::ClearBinding)
                 .style(surface_button),
