@@ -1,4 +1,9 @@
 pub mod device;
 pub mod handler;
+pub mod log;
+pub mod openrazer;
 pub mod perms;
 pub mod server;
+pub mod spawn_ui;
+pub mod tray;
+pub mod uinput_sink;

@@ -162,6 +162,7 @@ fn apply_lighting_soft<L: LightingClient>(
         Ok(()) => Ok(()),
         Err(ErrorCode::Lighting) => {
             state.openrazer_available = false;
+            crate::log::log_lighting_error();
             Ok(())
         }
         Err(e) => Err(e),
