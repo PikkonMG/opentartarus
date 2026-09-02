@@ -46,6 +46,14 @@ pub fn bind_exclusive(socket: &Path) -> io::Result<UnixListener> {
     UnixListener::bind(socket)
 }
 
+pub fn listen_error_code(err: &io::Error) -> ErrorCode {
+    if err.kind() == ErrorKind::AddrInUse {
+        ErrorCode::AlreadyRunning
+    } else {
+        ErrorCode::Io
+    }
+}
+
 pub fn emit_event(tx: &broadcast::Sender<EventMsg>, method: EventMethod, params: Value) {
     let _ = tx.send(EventMsg {
         r#type: EventTag,
@@ -415,8 +423,20 @@ mod tests {
         let live = bind_exclusive(&socket).unwrap();
         let err = bind_exclusive(&socket).expect_err("live listener must win");
         assert_eq!(err.kind(), ErrorKind::AddrInUse);
+        assert_eq!(listen_error_code(&err), ErrorCode::AlreadyRunning);
+        assert_ne!(listen_error_code(&err), ErrorCode::GrabConflict);
+        assert_ne!(listen_error_code(&err), ErrorCode::NotFound);
         drop(live);
         let _ = std::fs::remove_file(&socket);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn second_daemon_is_already_running_not_grab_or_missing() {
+        let err = std::io::Error::new(ErrorKind::AddrInUse, "already_running");
+        assert_eq!(listen_error_code(&err), ErrorCode::AlreadyRunning);
+        assert_ne!(listen_error_code(&err), ErrorCode::GrabConflict);
+        assert_ne!(listen_error_code(&err), ErrorCode::NotFound);
+        assert_ne!(listen_error_code(&err), ErrorCode::Permission);
     }
 }

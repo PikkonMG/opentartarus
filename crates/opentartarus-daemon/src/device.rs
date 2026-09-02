@@ -4,6 +4,7 @@ use opentartarus_core::types::DeviceModel;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 pub const SCAN_INTERVAL_MISSING_MS: u64 = 1000;
 pub const SCAN_INTERVAL_ACTIVE_MS: u64 = 250;
@@ -15,6 +16,21 @@ const HID_DEVICES: &str = "/sys/bus/hid/devices";
 const VENDOR_FIELD: &str = "Vendor=";
 const PRODUCT_FIELD: &str = "Product=";
 const HANDLERS_FIELD: &str = "Handlers=";
+const ABS_FIELD: &str = "ABS=";
+const REL_FIELD: &str = "REL=";
+const LED_FIELD: &str = "LED=";
+const HANDLER_MOUSE_PREFIX: &str = "mouse";
+const FUSER_HEADER_USER: &str = "USER";
+const FUSER_HEADER_COMMAND: &str = "COMMAND";
+const OPENRAZER_COMM_PREFIX: &str = "openrazer";
+const OPENRGB_COMM_PREFIX: &str = "openrgb";
+const POLYCHROMATIC_COMM_PREFIX: &str = "polychromatic";
+const OPENRAZER_DAEMON_NAME: &str = "openrazer-daemon";
+const PROC_DIR: &str = "/proc";
+const PROC_FD_DIR: &str = "fd";
+const PROC_COMM_FILE: &str = "comm";
+const FUSER_BIN: &str = "fuser";
+const FUSER_VERBOSE_FLAG: &str = "-v";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Detected {
@@ -22,6 +38,27 @@ pub struct Detected {
     pub vid: u16,
     pub pid: u16,
     pub nodes: Vec<PathBuf>,
+    pub grab_nodes: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeRole {
+    BootKeyboard,
+    ExtraKeys,
+    Mouse,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceIoKind {
+    EvdevGrab,
+    EvdevOpen,
+    Uinput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BusyDecision {
+    Share,
+    Conflict { holder: Option<String> },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -59,10 +96,117 @@ pub fn pick_first(found: Vec<Detected>) -> Option<Detected> {
 }
 
 pub fn grab_conflict_message(os: &str) -> ErrorCode {
-    if os.contains("EBUSY") || os.contains("Device or resource busy") {
-        ErrorCode::GrabConflict
+    classify_device_io(DeviceIoKind::EvdevGrab, os)
+}
+
+pub fn classify_device_io(kind: DeviceIoKind, os: &str) -> ErrorCode {
+    match kind {
+        DeviceIoKind::Uinput => ErrorCode::Permission,
+        DeviceIoKind::EvdevGrab | DeviceIoKind::EvdevOpen => {
+            if is_busy_os(os) {
+                ErrorCode::GrabConflict
+            } else {
+                ErrorCode::Permission
+            }
+        }
+    }
+}
+
+pub fn grab_targets(detected: &Detected) -> &[PathBuf] {
+    if detected.grab_nodes.is_empty() {
+        &detected.nodes
     } else {
-        ErrorCode::Permission
+        &detected.grab_nodes
+    }
+}
+
+pub fn node_role_from_proc_block(block: &str) -> NodeRole {
+    let has_abs = block_has_field(block, ABS_FIELD);
+    let has_rel = block_has_field(block, REL_FIELD);
+    let has_led = block_has_field(block, LED_FIELD);
+    let has_mouse = handler_tokens(block).any(|token| token.starts_with(HANDLER_MOUSE_PREFIX));
+    if has_abs {
+        NodeRole::ExtraKeys
+    } else if has_mouse || (has_rel && !has_led) {
+        NodeRole::Mouse
+    } else {
+        NodeRole::BootKeyboard
+    }
+}
+
+pub fn parse_fuser_verbose(text: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || (trimmed.contains(FUSER_HEADER_USER) && trimmed.contains(FUSER_HEADER_COMMAND))
+        {
+            continue;
+        }
+        let rest = trimmed.split_once(':').map(|(_, rest)| rest).unwrap_or(trimmed);
+        let mut parts = rest.split_whitespace();
+        let Some(_user) = parts.next() else {
+            continue;
+        };
+        let Some(_pid) = parts.next() else {
+            continue;
+        };
+        let Some(_access) = parts.next() else {
+            continue;
+        };
+        let Some(cmd) = parts.next() else {
+            continue;
+        };
+        if !names.iter().any(|name| name == cmd) {
+            names.push(cmd.to_string());
+        }
+    }
+    names
+}
+
+pub fn display_holder_name(raw: &str) -> String {
+    if raw.to_ascii_lowercase().starts_with(OPENRAZER_COMM_PREFIX) {
+        OPENRAZER_DAEMON_NAME.to_string()
+    } else {
+        raw.to_string()
+    }
+}
+
+pub fn is_lighting_holder(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with(OPENRAZER_COMM_PREFIX)
+        || lower.starts_with(OPENRGB_COMM_PREFIX)
+        || lower.starts_with(POLYCHROMATIC_COMM_PREFIX)
+}
+
+pub fn busy_decision(holders: &[String]) -> BusyDecision {
+    if holders.is_empty() {
+        return BusyDecision::Conflict { holder: None };
+    }
+    if holders.iter().all(|holder| is_lighting_holder(holder)) {
+        return BusyDecision::Share;
+    }
+    let holder = holders
+        .iter()
+        .find(|holder| !is_lighting_holder(holder))
+        .or_else(|| holders.first())
+        .map(|holder| display_holder_name(holder));
+    BusyDecision::Conflict { holder }
+}
+
+pub fn grab_conflict_status_value(holder: Option<&str>) -> String {
+    match holder {
+        Some(name) if !name.is_empty() => display_holder_name(name),
+        _ => ErrorCode::GrabConflict.user_message().to_string(),
+    }
+}
+
+pub fn lookup_event_holders(path: &Path) -> Vec<String> {
+    let from_proc = holders_from_proc(path);
+    if from_proc.is_empty() {
+        fuser_holders(path)
+    } else {
+        from_proc
     }
 }
 
@@ -78,7 +222,7 @@ pub fn parse_hid_bus_id(name: &str) -> Option<(u16, u16)> {
 
 pub fn parse_proc_input_devices(text: &str) -> Vec<Detected> {
     let mut order: Vec<(u16, u16)> = Vec::new();
-    let mut groups: HashMap<(u16, u16), Vec<PathBuf>> = HashMap::new();
+    let mut groups: HashMap<(u16, u16), Vec<(PathBuf, NodeRole)>> = HashMap::new();
 
     for block in text.split("\n\n") {
         let Some((vid, pid)) = parse_proc_ids(block) else {
@@ -91,19 +235,18 @@ pub fn parse_proc_input_devices(text: &str) -> Vec<Detected> {
         if !groups.contains_key(&key) {
             order.push(key);
         }
-        groups.entry(key).or_default().extend(parse_proc_event_nodes(block));
+        groups
+            .entry(key)
+            .or_default()
+            .extend(parse_proc_node_entries(block));
     }
 
     order
         .into_iter()
         .filter_map(|(vid, pid)| {
             let model = classify_input_id(vid, pid)?;
-            Some(Detected {
-                model,
-                vid,
-                pid,
-                nodes: groups.remove(&(vid, pid)).unwrap_or_default(),
-            })
+            let entries = groups.remove(&(vid, pid)).unwrap_or_default();
+            Some(detected_from_entries(model, vid, pid, entries))
         })
         .collect()
 }
@@ -126,6 +269,7 @@ pub fn hid_catalog_from_names(names: &[&str]) -> Vec<Detected> {
             vid,
             pid,
             nodes: Vec::new(),
+            grab_nodes: Vec::new(),
         });
     }
     out
@@ -225,16 +369,118 @@ fn field_hex(line: &str, key: &str) -> Option<u16> {
 }
 
 fn parse_proc_event_nodes(block: &str) -> Vec<PathBuf> {
-    let Some(line) = block.lines().find(|line| line.starts_with("H:")) else {
-        return Vec::new();
-    };
-    line.split_whitespace()
-        .filter_map(|token| {
-            let token = token.strip_prefix(HANDLERS_FIELD).unwrap_or(token);
-            is_event_handler(token).then_some(token)
-        })
+    handler_tokens(block)
+        .filter(|token| is_event_handler(token))
         .map(|token| PathBuf::from(DEV_INPUT).join(token))
         .collect()
+}
+
+fn parse_proc_node_entries(block: &str) -> Vec<(PathBuf, NodeRole)> {
+    let role = node_role_from_proc_block(block);
+    parse_proc_event_nodes(block)
+        .into_iter()
+        .map(|path| (path, role))
+        .collect()
+}
+
+fn detected_from_entries(
+    model: DeviceModel,
+    vid: u16,
+    pid: u16,
+    entries: Vec<(PathBuf, NodeRole)>,
+) -> Detected {
+    let nodes: Vec<PathBuf> = entries.iter().map(|(path, _)| path.clone()).collect();
+    let mut grab_nodes: Vec<PathBuf> = entries
+        .into_iter()
+        .filter(|(_, role)| matches!(role, NodeRole::ExtraKeys | NodeRole::Mouse))
+        .map(|(path, _)| path)
+        .collect();
+    if grab_nodes.is_empty() {
+        grab_nodes = nodes.clone();
+    }
+    Detected {
+        model,
+        vid,
+        pid,
+        nodes,
+        grab_nodes,
+    }
+}
+
+fn handler_tokens(block: &str) -> impl Iterator<Item = &str> {
+    block
+        .lines()
+        .find(|line| line.starts_with("H:"))
+        .into_iter()
+        .flat_map(|line| line.split_whitespace())
+        .map(|token| token.strip_prefix(HANDLERS_FIELD).unwrap_or(token))
+}
+
+fn block_has_field(block: &str, field: &str) -> bool {
+    block.lines().any(|line| line.contains(field))
+}
+
+fn is_busy_os(os: &str) -> bool {
+    os.contains("EBUSY") || os.contains("Device or resource busy")
+}
+
+fn holders_from_proc(path: &Path) -> Vec<String> {
+    let Ok(real) = fs::canonicalize(path) else {
+        return Vec::new();
+    };
+    let Ok(proc) = fs::read_dir(PROC_DIR) else {
+        return Vec::new();
+    };
+    let mut names = Vec::new();
+    for entry in proc.flatten() {
+        let pid = entry.file_name();
+        if !pid
+            .to_string_lossy()
+            .as_bytes()
+            .iter()
+            .all(u8::is_ascii_digit)
+        {
+            continue;
+        }
+        let fd_dir = entry.path().join(PROC_FD_DIR);
+        let Ok(fds) = fs::read_dir(fd_dir) else {
+            continue;
+        };
+        let hit = fds.flatten().any(|fd| {
+            let Ok(dest) = fs::read_link(fd.path()) else {
+                return false;
+            };
+            dest == path || dest == real || fs::canonicalize(&dest).is_ok_and(|got| got == real)
+        });
+        if !hit {
+            continue;
+        }
+        let Ok(comm) = fs::read_to_string(entry.path().join(PROC_COMM_FILE)) else {
+            continue;
+        };
+        let comm = comm.trim();
+        if comm.is_empty() || names.iter().any(|name| name == comm) {
+            continue;
+        }
+        names.push(comm.to_string());
+    }
+    names
+}
+
+fn fuser_holders(path: &Path) -> Vec<String> {
+    let Ok(output) = Command::new(FUSER_BIN)
+        .arg(FUSER_VERBOSE_FLAG)
+        .arg(path)
+        .output()
+    else {
+        return Vec::new();
+    };
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    parse_fuser_verbose(&text)
 }
 
 fn is_event_handler(token: &str) -> bool {
@@ -261,18 +507,36 @@ H: Handlers=event22 mouse0
 I: Bus=0003 Vendor=1532 Product=022b Version=0111
 N: Name=\"Razer Razer Tartarus V2\"
 H: Handlers=sysrq kbd leds event270
+B: EV=120013
+B: LED=7
 
 I: Bus=0003 Vendor=1532 Product=022b Version=0111
 N: Name=\"Razer Razer Tartarus V2\"
 H: Handlers=sysrq kbd event271
+B: EV=10001f
+B: REL=1040
+B: ABS=10100000000
 
 I: Bus=0003 Vendor=1532 Product=022b Version=0111
 N: Name=\"Razer Razer Tartarus V2\"
 H: Handlers=event272 mouse10
+B: EV=17
+B: REL=903
 
 I: Bus=0003 Vendor=1234 Product=5678 Version=0111
 N: Name=\"OpenTartarus Keyboard\"
 H: Handlers=sysrq kbd event273
+";
+
+    const FUSER_OPENRAZER: &str = "\
+                     USER        PID ACCESS COMMAND
+/dev/input/event270: shane      5782 f.... openrazer-daemo
+/dev/input/event271: shane      5782 f.... openrazer-daemo
+";
+
+    const FUSER_REMAPPER: &str = "\
+                     USER        PID ACCESS COMMAND
+/dev/input/event271: root       4169 F.... input-remapper
 ";
 
     fn v2_detected(nodes: &[&str]) -> Detected {
@@ -281,6 +545,7 @@ H: Handlers=sysrq kbd event273
             vid: USB_VID_RAZER,
             pid: USB_PID_TARTARUS_V2,
             nodes: nodes.iter().map(PathBuf::from).collect(),
+            grab_nodes: Vec::new(),
         }
     }
 
@@ -305,6 +570,7 @@ H: Handlers=sysrq kbd event273
             vid: USB_VID_RAZER,
             pid: USB_PID_TARTARUS_PRO,
             nodes: vec![],
+            grab_nodes: vec![],
         };
         let b = v2_detected(&[]);
         assert_eq!(pick_first(vec![a, b]).unwrap().model, DeviceModel::Pro);
@@ -345,6 +611,105 @@ H: Handlers=sysrq kbd event273
                 PathBuf::from("/dev/input/event272"),
             ]
         );
+        assert_eq!(
+            grab_targets(&found[0]),
+            &[
+                PathBuf::from("/dev/input/event271"),
+                PathBuf::from("/dev/input/event272"),
+            ]
+        );
+    }
+
+    #[test]
+    fn extra_keys_and_mouse_are_remap_targets_boot_kbd_is_not() {
+        assert_eq!(
+            node_role_from_proc_block(
+                "H: Handlers=sysrq kbd leds event270\nB: EV=120013\nB: LED=7\n"
+            ),
+            NodeRole::BootKeyboard
+        );
+        assert_eq!(
+            node_role_from_proc_block(
+                "H: Handlers=sysrq kbd event271\nB: REL=1040\nB: ABS=10100000000\n"
+            ),
+            NodeRole::ExtraKeys
+        );
+        assert_eq!(
+            node_role_from_proc_block("H: Handlers=event272 mouse10\nB: REL=903\n"),
+            NodeRole::Mouse
+        );
+    }
+
+    #[test]
+    fn evdev_busy_is_grab_conflict_not_not_found() {
+        assert_eq!(
+            classify_device_io(
+                DeviceIoKind::EvdevGrab,
+                "Device or resource busy (os error 16)"
+            ),
+            ErrorCode::GrabConflict
+        );
+        assert_ne!(
+            classify_device_io(
+                DeviceIoKind::EvdevGrab,
+                "Device or resource busy (os error 16)"
+            ),
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            classify_device_io(DeviceIoKind::EvdevOpen, "No such file or directory (os error 2)"),
+            ErrorCode::Permission
+        );
+        assert_ne!(
+            classify_device_io(DeviceIoKind::EvdevOpen, "No such file or directory (os error 2)"),
+            ErrorCode::NotFound
+        );
+        let missing = device_ui_state(DetectStatus::Missing, None, false);
+        assert!(!missing.present);
+        assert!(!missing.grab_conflict);
+    }
+
+    #[test]
+    fn uinput_busy_is_permission_not_grab_conflict() {
+        assert_eq!(
+            classify_device_io(DeviceIoKind::Uinput, "Device or resource busy (os error 16)"),
+            ErrorCode::Permission
+        );
+        assert_ne!(
+            classify_device_io(DeviceIoKind::Uinput, "EBUSY"),
+            ErrorCode::GrabConflict
+        );
+    }
+
+    #[test]
+    fn openrazer_holder_is_shared_not_conflict() {
+        let holders = parse_fuser_verbose(FUSER_OPENRAZER);
+        assert_eq!(holders, vec!["openrazer-daemo".to_string()]);
+        assert_eq!(busy_decision(&holders), BusyDecision::Share);
+        assert_eq!(display_holder_name("openrazer-daemo"), OPENRAZER_DAEMON_NAME);
+    }
+
+    #[test]
+    fn remapper_ebusy_is_grab_conflict_with_process_name() {
+        let holders = parse_fuser_verbose(FUSER_REMAPPER);
+        assert_eq!(
+            busy_decision(&holders),
+            BusyDecision::Conflict {
+                holder: Some("input-remapper".to_string())
+            }
+        );
+        assert_eq!(
+            grab_conflict_status_value(Some("input-remapper")),
+            "input-remapper"
+        );
+        assert_eq!(
+            grab_conflict_status_value(None),
+            ErrorCode::GrabConflict.user_message()
+        );
+        let ui = device_ui_state(DetectStatus::Present, Some(DeviceModel::V2), true);
+        assert!(ui.present);
+        assert!(ui.grab_conflict);
+        assert_eq!(detect_status(None, |_| true), DetectStatus::Missing);
     }
 
     #[test]

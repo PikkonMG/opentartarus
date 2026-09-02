@@ -12,8 +12,9 @@ use opentartarus_core::remap::{Clock, RawEvent, RemapEngine};
 use opentartarus_core::store::read_active_id;
 use opentartarus_core::types::{DeviceModel, MouseButton, ScrollDir};
 use opentartarus_daemon::device::{
-    detect_status, device_ui_state, enumerate_tartarus, grab_conflict_message, pick_first,
-    scan_interval_ms, snapshot_changed, DetectStatus, Detected, DeviceUiState,
+    busy_decision, classify_device_io, detect_status, device_ui_state, enumerate_tartarus,
+    grab_conflict_status_value, grab_targets, lookup_event_holders, pick_first, scan_interval_ms,
+    snapshot_changed, BusyDecision, DetectStatus, Detected, DeviceIoKind, DeviceUiState,
 };
 use opentartarus_daemon::handler::{handle_request, DaemonState};
 use opentartarus_daemon::{daemon_lighting, set_daemon_lighting_usb, DaemonLighting};
@@ -21,7 +22,7 @@ use opentartarus_daemon::perms::{probe_evdev_readable, probe_uinput};
 use opentartarus_daemon::playback::{
     commit_if_engine_replaced, remap_physical_event, tick_engine, EngineEpoch,
 };
-use opentartarus_daemon::server::{accept_loop, bind_exclusive, emit_event};
+use opentartarus_daemon::server::{accept_loop, bind_exclusive, emit_event, listen_error_code};
 use opentartarus_daemon::spawn_ui::UiSupervisor;
 use opentartarus_daemon::tray::{
     spawn_tray, tray_name_from_applied_params, tray_name_from_profile_id, TrayCmd,
@@ -118,13 +119,10 @@ async fn run() -> Result<(), ErrorCode> {
 
     let listener = match bind_exclusive(&paths.socket) {
         Ok(listener) => listener,
-        Err(err) if err.kind() == ErrorKind::AddrInUse => {
-            log::write(&ErrorCode::AlreadyRunning.log_line(Some(&err.to_string())));
-            return Err(ErrorCode::AlreadyRunning);
-        }
         Err(err) => {
-            log::write(&ErrorCode::Io.log_line(Some(&err.to_string())));
-            return Err(ErrorCode::Io);
+            let code = listen_error_code(&err);
+            log::write(&code.log_line(Some(&err.to_string())));
+            return Err(code);
         }
     };
 
@@ -343,11 +341,11 @@ fn device_loop(
             let status = detect_status(detected.as_ref(), |path| probe_evdev_readable(path));
             match (status, detected) {
                 (DetectStatus::Present, Some(detected)) => {
-                    match grab_nodes(&detected.nodes) {
+                    match grab_nodes(grab_targets(&detected)) {
                         Ok(devices) => {
                             grabbed = devices;
                             grabbed_ids = Some((detected.vid, detected.pid, detected.model));
-                            grabbed_nodes = detected.nodes.clone();
+                            grabbed_nodes = grab_targets(&detected).to_vec();
                             last_ui = Some(device_ui_state(
                                 DetectStatus::Present,
                                 Some(detected.model),
@@ -355,8 +353,8 @@ fn device_loop(
                             ));
                             on_device_appeared(&state, &detected, &events, &epoch);
                         }
-                        Err((code, os)) => {
-                            let grab_conflict = code == ErrorCode::GrabConflict;
+                        Err(fail) => {
+                            let grab_conflict = fail.code == ErrorCode::GrabConflict;
                             let next = device_ui_state(
                                 DetectStatus::Present,
                                 Some(detected.model),
@@ -369,7 +367,7 @@ fn device_loop(
                                 next,
                                 Some(detected.vid),
                                 Some(detected.pid),
-                                Some((code, os)),
+                                Some(fail),
                             );
                         }
                     }
@@ -387,7 +385,11 @@ fn device_loop(
                         next,
                         Some(detected.vid),
                         Some(detected.pid),
-                        Some((ErrorCode::Permission, String::new())),
+                        Some(GrabFail {
+                            code: ErrorCode::Permission,
+                            os: String::new(),
+                            holder: None,
+                        }),
                     );
                 }
                 (DetectStatus::Missing, _)
@@ -498,7 +500,7 @@ fn publish_idle_detect(
     next: DeviceUiState,
     vid: Option<u16>,
     pid: Option<u16>,
-    error: Option<(ErrorCode, String)>,
+    error: Option<GrabFail>,
 ) {
     if last.as_ref().is_some_and(|prev| !snapshot_changed(prev, &next)) {
         return;
@@ -508,7 +510,9 @@ fn publish_idle_detect(
     st.model = next.model;
     st.evdev_ok = next.evdev_ok;
     st.grab_conflict = if next.grab_conflict {
-        Some(ErrorCode::GrabConflict.user_message().to_string())
+        Some(grab_conflict_status_value(
+            error.as_ref().and_then(|fail| fail.holder.as_deref()),
+        ))
     } else {
         None
     };
@@ -520,40 +524,79 @@ fn publish_idle_detect(
     }
     st.openrazer_available = st.lighting.available();
     emit_event(events, EventMethod::DeviceChanged, device_event_params(&st));
-    if let Some((code, os)) = error {
+    if let Some(fail) = error {
+        let os = match (&fail.holder, fail.os.is_empty()) {
+            (Some(holder), false) => format!("{} holder={holder}", fail.os),
+            (Some(holder), true) => format!("holder={holder}"),
+            (None, false) => fail.os.clone(),
+            (None, true) => String::new(),
+        };
         let os_ref = if os.is_empty() { None } else { Some(os.as_str()) };
-        log::write(&code.log_line(os_ref));
+        log::write(&fail.code.log_line(os_ref));
         emit_event(
             events,
             EventMethod::Error,
             json!({
-                "code": code.wire_name(),
-                "message": code.user_message(),
+                "code": fail.code.wire_name(),
+                "message": fail.code.user_message(),
             }),
         );
     }
     *last = Some(next);
 }
 
-fn grab_nodes(nodes: &[PathBuf]) -> Result<Vec<evdev::Device>, (ErrorCode, String)> {
+struct GrabFail {
+    code: ErrorCode,
+    os: String,
+    holder: Option<String>,
+}
+
+fn grab_fail(kind: DeviceIoKind, err: impl ToString, holder: Option<String>) -> GrabFail {
+    let os = err.to_string();
+    GrabFail {
+        code: classify_device_io(kind, &os),
+        os,
+        holder,
+    }
+}
+
+fn grab_nodes(nodes: &[PathBuf]) -> Result<Vec<evdev::Device>, GrabFail> {
     let mut devices = Vec::with_capacity(nodes.len());
     for path in nodes {
-        let mut device = evdev::Device::open(path).map_err(|err| {
-            (
-                grab_conflict_message(&err.to_string()),
-                err.to_string(),
-            )
-        })?;
-        device.grab().map_err(|err| {
-            (
-                grab_conflict_message(&err.to_string()),
-                err.to_string(),
-            )
-        })?;
-        let _ = device.set_nonblocking(true);
-        devices.push(device);
+        match open_and_grab(path) {
+            Ok(device) => devices.push(device),
+            Err(err) => {
+                let os = err.to_string();
+                if classify_device_io(DeviceIoKind::EvdevGrab, &os) != ErrorCode::GrabConflict {
+                    return Err(grab_fail(DeviceIoKind::EvdevOpen, os, None));
+                }
+                let holders = lookup_event_holders(path);
+                match busy_decision(&holders) {
+                    BusyDecision::Share => {
+                        let device = evdev::Device::open(path)
+                            .map_err(|open_err| grab_fail(DeviceIoKind::EvdevOpen, open_err, None))?;
+                        let _ = device.set_nonblocking(true);
+                        devices.push(device);
+                    }
+                    BusyDecision::Conflict { holder } => {
+                        return Err(GrabFail {
+                            code: ErrorCode::GrabConflict,
+                            os,
+                            holder,
+                        });
+                    }
+                }
+            }
+        }
     }
     Ok(devices)
+}
+
+fn open_and_grab(path: &PathBuf) -> std::io::Result<evdev::Device> {
+    let mut device = evdev::Device::open(path)?;
+    device.grab()?;
+    let _ = device.set_nonblocking(true);
+    Ok(device)
 }
 
 fn on_device_appeared(
