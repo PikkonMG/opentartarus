@@ -1,0 +1,104 @@
+# Dependencies
+docs/superpowers/
+
+# Build outputs
+out/
+release/
+dist/
+build/
+.cache/
+
+# IDE / editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.history/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Environment
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+
+# Signing & secrets — code-signing material and credentials, never commit.
+# Release binaries are currently unsigned (see AGENTS.md Distribution), but
+# a leaked signing key or cert bundle is still a security incident.
+*.pem
+*.key
+*.p12
+*.pfx
+*.mobileprovision
+*.provisionprofile
+secrets/
+.npmrc.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Local app state (developer-only)
+.pi-desktop-gui/
+.pi/
+.pi-desktop/
+.pi-subagents/
+
+# Agent context — local-only memory and architecture notes
+MEMORY.md
+AGENTS.md
+
+# AI Coding Agents
+.serena/
+.claude/
+.claude-code/
+.codex/
+.kilo/
+.roo/
+.cline/
+.aider/
+.continue/
+.openhands/
+.agents/
+.superpowers/
+
+# AI IDEs
+.cursor/
+.windsurf/
+.zed/
+
+# MCP
+.mcp/
+.mcp-server/
+.mcpservers/
+.context7/
+.playwright-mcp/
+
+# Agent Memory / Knowledge
+.openmemory/
+.mem0/
+.memory/
+.knowledge/
+.context/
+
+# Local Developer Config
+.fleet/
+
+# Local Runtime Environments
+.venv/
+.env/
+
+# Worktrees / Local Sandboxes
+.worktrees/
+.sandbox/
