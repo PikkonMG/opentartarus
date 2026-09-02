@@ -111,7 +111,9 @@ impl RemapEngine {
         };
         if ev.ev_type == EV_REL {
             self.dispatch(key_id, KEY_DOWN, ev, sink, clock);
-            if !matches!(self.table.get(&key_id), Some(Action::Macro { .. })) {
+            if self.table.contains_key(&key_id)
+                && !matches!(self.table.get(&key_id), Some(Action::Macro { .. }))
+            {
                 self.dispatch(key_id, KEY_UP, ev, sink, clock);
             }
             return;
@@ -180,14 +182,12 @@ impl RemapEngine {
     ) {
         match self.table.get(&key_id).cloned() {
             None => {
-                if value != KEY_UP {
-                    sink.emit(Emitted {
-                        keyboard: ev.ev_type == EV_KEY,
-                        ev_type: ev.ev_type,
-                        code: ev.code,
-                        value: ev.value,
-                    });
-                }
+                sink.emit(Emitted {
+                    keyboard: ev.ev_type == EV_KEY,
+                    ev_type: ev.ev_type,
+                    code: ev.code,
+                    value: ev.value,
+                });
             }
             Some(action) => match value {
                 KEY_DOWN => self.play_press(key_id, &action, sink, clock),
@@ -550,18 +550,24 @@ mod tests {
         assert!(s.0.iter().any(|x| x.code == ecode && x.value == 0));
 
         let mut s2 = FakeSink(vec![]);
+        let kp02_down = RawEvent {
+            vid: USB_VID_RAZER,
+            pid: USB_PID_TARTARUS_V2,
+            ev_type: 1,
+            code: 3,
+            value: 1,
+        };
+        e.handle(kp02_down, &mut s2, &mut c);
         e.handle(
             RawEvent {
-                vid: USB_VID_RAZER,
-                pid: USB_PID_TARTARUS_V2,
-                ev_type: 1,
-                code: 3,
-                value: 1,
+                value: 0,
+                ..kp02_down
             },
             &mut s2,
             &mut c,
         );
         assert!(s2.0.iter().any(|x| x.code == 3 && x.value == 1));
+        assert!(s2.0.iter().any(|x| x.code == 3 && x.value == 0));
 
         assert!(!allow_grab(USB_VID_RAZER, USB_PID_NAGA_PRO_1));
         assert!(allow_grab(USB_VID_RAZER, USB_PID_TARTARUS_V2));
