@@ -100,8 +100,27 @@ pub enum Message {
     RevertProfile,
     FixPermissions,
     FixPermissionsDone(FixPermissionsOutcome),
+    Quit,
     CloseRequested(window::Id),
     WindowId(Option<window::Id>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloseAction {
+    HideToTray,
+    ExitUi,
+}
+
+pub fn close_action(wayland: bool) -> CloseAction {
+    if wayland {
+        CloseAction::ExitUi
+    } else {
+        CloseAction::HideToTray
+    }
+}
+
+pub fn session_is_wayland() -> bool {
+    std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
 pub struct App {
@@ -126,6 +145,7 @@ pub struct App {
     pub window_id: Option<window::Id>,
     pub after_fix_permissions: bool,
     pub last_error: Option<String>,
+    pub hidden: bool,
 }
 
 impl Default for App {
@@ -156,6 +176,7 @@ impl Default for App {
             window_id: None,
             after_fix_permissions: false,
             last_error: None,
+            hidden: false,
         }
     }
 }
@@ -412,9 +433,20 @@ impl App {
                 }
                 Task::none()
             }
+            Message::Quit => {
+                self.send(Method::QuitDaemon, json!({}));
+                iced::exit()
+            }
             Message::CloseRequested(id) => {
                 self.window_id = Some(id);
-                window::change_mode(id, Mode::Hidden)
+                self.hidden = true;
+                match close_action(session_is_wayland()) {
+                    CloseAction::HideToTray => Task::batch([
+                        window::change_mode(id, Mode::Hidden),
+                        window::minimize(id, true),
+                    ]),
+                    CloseAction::ExitUi => iced::exit(),
+                }
             }
             Message::WindowId(id) => {
                 self.window_id = id;
@@ -424,6 +456,9 @@ impl App {
     }
 
     pub fn banner(&self) -> Option<Banner> {
+        if self.hidden {
+            return None;
+        }
         match self.phase {
             Phase::Connecting => Some(Banner::Starting),
             Phase::FailedStart => Some(Banner::CouldNotStart),
@@ -618,10 +653,12 @@ impl App {
         }
     }
 
-    fn show_window(&self) -> Task<Message> {
+    fn show_window(&mut self) -> Task<Message> {
+        self.hidden = false;
         if let Some(id) = self.window_id {
             return Task::batch([
                 window::change_mode(id, Mode::Windowed),
+                window::minimize(id, false),
                 window::gain_focus(id),
             ]);
         }
@@ -629,6 +666,7 @@ impl App {
             if let Some(id) = id {
                 Task::batch([
                     window::change_mode(id, Mode::Windowed),
+                    window::minimize(id, false),
                     window::gain_focus(id),
                 ])
             } else {
@@ -1001,5 +1039,69 @@ mod tests {
             app.banner(),
             Some(Banner::Other("Not recording.".into()))
         );
+    }
+
+    #[test]
+    fn present_but_unreadable_is_permission_not_no_device() {
+        let mut app = running_app();
+        app.device_present = false;
+        app.ever_present = false;
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::GetStatus),
+            ok: true,
+            result: Some(json!({
+                "device": { "present": true, "model": "v2", "vid": "1532", "pid": "022b" },
+                "openrazer": { "available": true },
+                "active_profile_id": null,
+                "record": { "active": false, "key_id": null, "deadline_ms": null },
+                "permissions": { "uinput": true, "evdev": false },
+                "grab_conflict": null,
+            })),
+            error: None,
+        });
+        assert_eq!(app.banner(), Some(Banner::Permission));
+    }
+
+    #[test]
+    fn missing_device_uses_no_device_copy() {
+        let mut app = running_app();
+        app.device_present = false;
+        app.ever_present = false;
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::GetStatus),
+            ok: true,
+            result: Some(json!({
+                "device": { "present": false, "model": null, "vid": null, "pid": null },
+                "openrazer": { "available": false },
+                "active_profile_id": null,
+                "record": { "active": false, "key_id": null, "deadline_ms": null },
+                "permissions": { "uinput": true, "evdev": true },
+                "grab_conflict": null,
+            })),
+            error: None,
+        });
+        assert_eq!(app.banner(), Some(Banner::NoDevice));
+    }
+
+    #[test]
+    fn quit_sends_quit_daemon() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        let _ = app.update(Message::Quit);
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::QuitDaemon);
+    }
+
+    #[test]
+    fn close_hides_and_does_not_quit_daemon() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        app.hidden = true;
+        assert_eq!(app.banner(), None);
+        assert!(rx.try_recv().is_err());
+        assert_eq!(close_action(false), CloseAction::HideToTray);
+        assert_eq!(close_action(true), CloseAction::ExitUi);
     }
 }

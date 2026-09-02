@@ -115,11 +115,23 @@ fn profile_list(app: &App) -> Element<'_, Message> {
             );
         }
     }
-    container(scrollable(list.padding(8)))
-        .width(Length::Fixed(PROFILE_LIST_WIDTH))
-        .height(Length::Fill)
-        .style(surface_container)
-        .into()
+    let quit = button(text(theme::BUTTON_QUIT))
+        .width(Length::Fill)
+        .on_press(Message::Quit)
+        .style(danger_button);
+    container(
+        column![
+            scrollable(list.padding(8)).height(Length::Fill),
+            quit,
+        ]
+        .spacing(8)
+        .padding(8)
+        .height(Length::Fill),
+    )
+    .width(Length::Fixed(PROFILE_LIST_WIDTH))
+    .height(Length::Fill)
+    .style(surface_container)
+    .into()
 }
 
 fn bind_panel(app: &App) -> Element<'_, Message> {

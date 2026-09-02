@@ -50,6 +50,7 @@ pub const BUTTON_RECORD: &str = "Record";
 pub const BUTTON_CANCEL: &str = "Cancel";
 pub const BUTTON_CLEAR: &str = "Clear";
 pub const BUTTON_ADD_STEP: &str = "Add step";
+pub const BUTTON_QUIT: &str = "Quit";
 pub const COMBO_PLACEHOLDER: &str = "Type a combo";
 pub const HOLD_REPEAT_LABEL: &str = "Hold to repeat";
 pub const MOUSE_LEFT: &str = "Left";
