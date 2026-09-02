@@ -2,6 +2,7 @@ pub mod codec;
 pub mod constants;
 pub mod error;
 pub mod ipc;
+pub mod lighting;
 pub mod keymap;
 pub mod pack;
 pub mod paths;
