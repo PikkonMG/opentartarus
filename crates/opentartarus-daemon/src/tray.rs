@@ -2,6 +2,7 @@ use ksni::menu::StandardItem;
 use ksni::Handle;
 use ksni::Tray;
 use opentartarus_core::pack::{shipped_profile, SHIPPED_IDS};
+use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub const TRAY_ID: &str = "opentartarus";
@@ -18,6 +19,19 @@ pub enum TrayCmd {
 
 pub fn tray_tooltip(profile_name: &str) -> String {
     format!("OpenTartarus — {profile_name}")
+}
+
+pub fn tray_name_from_profile_id(id: &str) -> String {
+    shipped_profile(id)
+        .map(|profile| profile.name)
+        .unwrap_or_else(|_| id.to_string())
+}
+
+pub fn tray_name_from_applied_params(params: &Value) -> Option<String> {
+    params
+        .get("id")
+        .and_then(Value::as_str)
+        .map(tray_name_from_profile_id)
 }
 
 pub fn tray_menu_labels(_active_name: &str) -> Vec<String> {
@@ -132,5 +146,20 @@ mod tests {
         assert_eq!(labels[labels.len() - 2], "Open");
         assert_eq!(labels[labels.len() - 1], "Quit");
         assert_eq!(tray_tooltip("Default"), "OpenTartarus — Default");
+    }
+
+    #[test]
+    fn tooltip_follows_any_profile_applied_id() {
+        let name = tray_name_from_applied_params(&serde_json::json!({
+            "id": "league-of-legends"
+        }))
+        .unwrap();
+        assert_eq!(name, "League of Legends");
+        assert_eq!(tray_tooltip(&name), "OpenTartarus — League of Legends");
+        assert_eq!(
+            tray_name_from_applied_params(&serde_json::json!({ "id": "default" })).as_deref(),
+            Some("Default")
+        );
+        assert_eq!(tray_name_from_applied_params(&serde_json::json!({})), None);
     }
 }

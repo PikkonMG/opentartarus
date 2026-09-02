@@ -3,6 +3,7 @@ pub mod handler;
 pub mod log;
 pub mod openrazer;
 pub mod perms;
+pub mod playback;
 pub mod server;
 pub mod spawn_ui;
 pub mod tray;

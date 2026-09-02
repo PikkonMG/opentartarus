@@ -5,7 +5,7 @@ use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::{EventMethod, Method};
 use opentartarus_core::keymap::{mouse_button_to_evdev, EV_KEY, EV_REL, REL_WHEEL};
 use opentartarus_core::lighting::LightingClient;
-use opentartarus_core::pack::{shipped_profile, SHIPPED_IDS};
+use opentartarus_core::pack::SHIPPED_IDS;
 use opentartarus_core::paths::Paths;
 use opentartarus_core::record::RecordReason;
 use opentartarus_core::remap::{Clock, RawEvent, RemapEngine};
@@ -17,9 +17,12 @@ use opentartarus_daemon::device::{
 use opentartarus_daemon::handler::{handle_request, DaemonState};
 use opentartarus_daemon::openrazer::OpenRazerClient;
 use opentartarus_daemon::perms::{probe_evdev_readable, probe_uinput};
+use opentartarus_daemon::playback::{remap_physical_event, EngineEpoch};
 use opentartarus_daemon::server::{accept_loop, bind_exclusive, emit_event};
 use opentartarus_daemon::spawn_ui::UiSupervisor;
-use opentartarus_daemon::tray::{spawn_tray, TrayCmd};
+use opentartarus_daemon::tray::{
+    spawn_tray, tray_name_from_applied_params, tray_name_from_profile_id, TrayCmd,
+};
 use opentartarus_daemon::uinput_sink::{token_from_evdev, UinputSink};
 use opentartarus_daemon::{log, tray};
 use serde_json::json;
@@ -62,8 +65,7 @@ fn active_profile_name<L: LightingClient>(state: &DaemonState<L>) -> String {
     state
         .active_id
         .as_deref()
-        .and_then(|id| shipped_profile(id).ok())
-        .map(|p| p.name)
+        .map(tray_name_from_profile_id)
         .unwrap_or_else(|| DEFAULT_PROFILE_NAME.to_string())
 }
 
@@ -182,7 +184,9 @@ async fn run() -> Result<(), ErrorCode> {
     let sink = Arc::new(Mutex::new(sink));
     let quit = Arc::new(AtomicBool::new(false));
     let clients = Arc::new(AtomicUsize::new(0));
+    let epoch = Arc::new(EngineEpoch::new());
     let (event_tx, _) = broadcast::channel(64);
+    let mut events_rx = event_tx.subscribe();
     let (tray_tx, mut tray_rx) = tokio::sync::mpsc::unbounded_channel();
 
     let tray_icon = tray::OpenTartarusTray::new(profile_name, tray_tx);
@@ -193,8 +197,17 @@ async fn run() -> Result<(), ErrorCode> {
         let events = event_tx.clone();
         let quit_flag = Arc::clone(&quit);
         let client_count = Arc::clone(&clients);
+        let epoch = Arc::clone(&epoch);
         tokio::spawn(async move {
-            accept_loop(listener, listener_state, events, quit_flag, client_count).await;
+            accept_loop(
+                listener,
+                listener_state,
+                events,
+                quit_flag,
+                client_count,
+                epoch,
+            )
+            .await;
         });
     }
 
@@ -203,8 +216,9 @@ async fn run() -> Result<(), ErrorCode> {
         let device_sink = Arc::clone(&sink);
         let events = event_tx.clone();
         let quit_flag = Arc::clone(&quit);
+        let epoch = Arc::clone(&epoch);
         std::thread::spawn(move || {
-            device_loop(device_state, device_sink, events, quit_flag);
+            device_loop(device_state, device_sink, events, quit_flag, epoch);
         });
     }
 
@@ -224,7 +238,7 @@ async fn run() -> Result<(), ErrorCode> {
                         }
                     }
                     Some(TrayCmd::ApplyProfile(id)) => {
-                        let name = {
+                        {
                             let mut st = state.lock().expect("daemon state");
                             let _ = handle_request(
                                 &mut st,
@@ -232,11 +246,30 @@ async fn run() -> Result<(), ErrorCode> {
                                 json!({ "id": id }),
                                 now_ms(),
                             );
-                            emit_event(
-                                &event_tx,
-                                EventMethod::ProfileApplied,
-                                json!({ "id": id }),
-                            );
+                        }
+                        epoch.bump();
+                        emit_event(
+                            &event_tx,
+                            EventMethod::ProfileApplied,
+                            json!({ "id": id }),
+                        );
+                    }
+                }
+            }
+            event = events_rx.recv() => {
+                match event {
+                    Ok(msg) if msg.method == EventMethod::ProfileApplied => {
+                        if let Some(name) = tray_name_from_applied_params(&msg.params) {
+                            if let Some(handle) = &tray_handle {
+                                handle
+                                    .update(|tray_state| tray_state.profile_name = name)
+                                    .await;
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let name = {
+                            let st = state.lock().expect("daemon state");
                             active_profile_name(&st)
                         };
                         if let Some(handle) = &tray_handle {
@@ -245,6 +278,8 @@ async fn run() -> Result<(), ErrorCode> {
                                 .await;
                         }
                     }
+                    Ok(_) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
             _ = tokio::signal::ctrl_c() => {
@@ -284,6 +319,7 @@ fn device_loop(
     sink: Arc<Mutex<Option<UinputSink>>>,
     events: broadcast::Sender<opentartarus_core::ipc::EventMsg>,
     quit: Arc<AtomicBool>,
+    epoch: Arc<EngineEpoch>,
 ) {
     let mut grabbed: Vec<evdev::Device> = Vec::new();
     let mut grabbed_ids: Option<(u16, u16, DeviceModel)> = None;
@@ -299,7 +335,7 @@ fn device_loop(
                         grabbed = devices;
                         grabbed_ids = Some((detected.vid, detected.pid, detected.model));
                         grabbed_nodes = detected.nodes.clone();
-                        on_device_appeared(&state, &detected, &events);
+                        on_device_appeared(&state, &detected, &events, &epoch);
                     }
                     Err((code, os)) => {
                         log::write(&code.log_line(Some(&os)));
@@ -376,6 +412,7 @@ fn device_loop(
                 &state,
                 &sink,
                 &events,
+                &epoch,
                 RawEvent {
                     vid,
                     pid,
@@ -413,6 +450,7 @@ fn on_device_appeared(
     state: &Mutex<DaemonState<OpenRazerClient>>,
     detected: &Detected,
     events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
+    epoch: &EngineEpoch,
 ) {
     let mut st = state.lock().expect("daemon state");
     let evdev_ok = detected.nodes.iter().all(|path| probe_evdev_readable(path));
@@ -424,7 +462,11 @@ fn on_device_appeared(
     update_lighting_usb(&mut st.lighting, Some((detected.vid, detected.pid)));
     let active = st.active_id.clone();
     if let Some(id) = active {
-        let _ = handle_request(&mut st, Method::ApplyProfile, json!({ "id": id }), now_ms());
+        let applied = handle_request(&mut st, Method::ApplyProfile, json!({ "id": id }), now_ms());
+        if applied.is_ok() {
+            epoch.bump();
+            emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
+        }
     }
     emit_event(events, EventMethod::DeviceChanged, device_event_params(&st));
 }
@@ -478,31 +520,31 @@ fn handle_physical_event<L: LightingClient>(
     state: &Mutex<DaemonState<L>>,
     sink: &Mutex<Option<UinputSink>>,
     events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
+    epoch: &EngineEpoch,
     ev: RawEvent,
 ) {
-    let mut st = state.lock().expect("daemon state");
-    if st.recorder.is_active() && ev.value == KEY_DOWN {
-        if let Some(params) = record_params_from_event(&ev) {
-            match handle_request(&mut st, Method::SubmitRecord, params, now_ms()) {
-                Ok(result) => {
-                    emit_event(events, EventMethod::Recorded, result);
-                    if let Some(id) = st.active_id.as_deref() {
-                        emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
+    {
+        let mut st = state.lock().expect("daemon state");
+        if st.recorder.is_active() && ev.value == KEY_DOWN {
+            if let Some(params) = record_params_from_event(&ev) {
+                match handle_request(&mut st, Method::SubmitRecord, params, now_ms()) {
+                    Ok(result) => {
+                        epoch.bump();
+                        emit_event(events, EventMethod::Recorded, result);
+                        if let Some(id) = st.active_id.as_deref() {
+                            emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
+                        }
+                    }
+                    Err(err) => {
+                        log::write(&err.log_line(None));
                     }
                 }
-                Err(err) => {
-                    log::write(&err.log_line(None));
-                }
+                return;
             }
-            return;
         }
     }
     let mut clock = SystemClock;
-    if let Ok(mut held) = sink.lock() {
-        if let Some(sink) = held.as_mut() {
-            st.engine.handle(ev, sink, &mut clock);
-        }
-    }
+    remap_physical_event(state, sink, epoch, ev, &mut clock);
 }
 
 fn record_params_from_event(ev: &RawEvent) -> Option<serde_json::Value> {

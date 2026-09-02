@@ -1,4 +1,5 @@
 use crate::handler::{handle_request, DaemonState};
+use crate::playback::{method_mutates_engine, EngineEpoch};
 use opentartarus_core::codec::{decode_frame, encode_frame};
 use opentartarus_core::constants::IPC_MAX_MESSAGE_BYTES;
 use opentartarus_core::error::ErrorCode;
@@ -48,6 +49,7 @@ pub async fn accept_loop<L: LightingClient + Send + 'static>(
     events: broadcast::Sender<EventMsg>,
     quit: Arc<AtomicBool>,
     clients: Arc<AtomicUsize>,
+    epoch: Arc<EngineEpoch>,
 ) {
     loop {
         if quit.load(Ordering::SeqCst) {
@@ -60,9 +62,10 @@ pub async fn accept_loop<L: LightingClient + Send + 'static>(
                 let events = events.clone();
                 let quit = Arc::clone(&quit);
                 let clients = Arc::clone(&clients);
+                let epoch = Arc::clone(&epoch);
                 tokio::spawn(async move {
                     let _guard = ClientGuard(clients);
-                    handle_client(stream, state, events, quit).await;
+                    handle_client(stream, state, events, quit, epoch).await;
                 });
             }
             Err(_) => {
@@ -88,6 +91,7 @@ async fn handle_client<L: LightingClient + Send>(
     state: Arc<Mutex<DaemonState<L>>>,
     events: broadcast::Sender<EventMsg>,
     quit: Arc<AtomicBool>,
+    epoch: Arc<EngineEpoch>,
 ) {
     let (mut reader, mut writer) = stream.into_split();
     let mut events_rx = events.subscribe();
@@ -105,6 +109,9 @@ async fn handle_client<L: LightingClient + Send>(
                             let mut st = state.lock().expect("daemon state");
                             dispatch_json(&mut *st, &payload)
                         };
+                        if method.is_some_and(method_mutates_engine) {
+                            epoch.bump();
+                        }
                         if write_bytes(&mut writer, &out).await.is_err() {
                             break;
                         }
