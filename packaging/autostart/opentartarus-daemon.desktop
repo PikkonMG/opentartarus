@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=OpenTartarus
+Exec=opentartarus-daemon
+X-GNOME-Autostart-enabled=true
+NoDisplay=true

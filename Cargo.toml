@@ -4,6 +4,7 @@ members = [
   "crates/opentartarus-core",
   "crates/opentartarus-daemon",
   "crates/opentartarus-ui",
+  "crates/opentartarus-fix-permissions",
 ]
 
 [workspace.package]

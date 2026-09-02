@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=OpenTartarus
+Comment=Tartarus keypad profiles for Linux
+Exec=opentartarus-ui
+Icon=opentartarus
+Categories=Game;Utility;
