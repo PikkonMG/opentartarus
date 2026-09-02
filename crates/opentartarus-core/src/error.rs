@@ -1,0 +1,37 @@
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorCode {
+    Permission,
+    Disconnect,
+    Lighting,
+    GrabConflict,
+    InvalidProfile,
+    UnknownKey,
+    RecordBusy,
+    NotFound,
+    Io,
+    AlreadyRunning,
+}
+
+impl ErrorCode {
+    pub fn user_message(self) -> &'static str {
+        match self {
+            Self::Permission => "OpenTartarus can’t talk to your keypad yet.",
+            Self::Disconnect => "Tartarus disconnected.",
+            Self::Lighting => "Lighting needs OpenRazer.",
+            Self::GrabConflict => {
+                "Something else is using the Tartarus. Quit that app and reopen OpenTartarus."
+            }
+            Self::InvalidProfile => {
+                "That profile file is damaged. Revert to shipped or pick another."
+            }
+            Self::UnknownKey => "That key isn’t on this keypad.",
+            Self::RecordBusy => "Already recording. Press a key or click Cancel.",
+            Self::NotFound => "That profile isn’t installed.",
+            Self::Io => "OpenTartarus couldn’t save. Try again.",
+            Self::AlreadyRunning => "already_running",
+        }
+    }
+}
