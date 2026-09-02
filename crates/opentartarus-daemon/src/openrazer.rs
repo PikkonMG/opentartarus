@@ -1,6 +1,9 @@
 use opentartarus_core::constants::{USB_PID_TARTARUS_PRO, USB_PID_TARTARUS_V2, USB_VID_RAZER};
 use opentartarus_core::error::ErrorCode;
-use opentartarus_core::lighting::{brightness_to_razer, wave_sysfs_value, LightingClient};
+use opentartarus_core::lighting::{
+    brightness_to_razer, openrazer_lighting_ready, should_request_openrazer_bus_name,
+    wave_sysfs_value, LightingClient,
+};
 use opentartarus_core::types::{Lighting, LightingEffect};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -45,7 +48,12 @@ impl LightingClient for OpenRazerClient {
     }
 
     fn available(&self) -> bool {
-        session_has_openrazer() || find_sysfs_node(self.vid, self.pid).is_some()
+        debug_assert!(!should_request_openrazer_bus_name());
+        openrazer_lighting_ready(
+            session_has_openrazer(),
+            find_sysfs_node(self.vid, self.pid).is_some(),
+            0,
+        )
     }
 }
 
@@ -298,6 +306,7 @@ mod tests {
         assert!(sysfs_name_matches("0003:1532:0244.0001", USB_VID_RAZER, USB_PID_TARTARUS_PRO));
         assert!(!sysfs_name_matches("0003:1532:008F.0001", USB_VID_RAZER, USB_PID_TARTARUS_V2));
         assert_eq!(OPENRAZER_BUS_NAME, "org.razer");
+        assert!(!should_request_openrazer_bus_name());
     }
 
     #[test]

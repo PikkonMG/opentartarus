@@ -161,7 +161,7 @@ fn apply_lighting_soft<L: LightingClient>(
     match state.lighting.apply(lighting) {
         Ok(()) => Ok(()),
         Err(ErrorCode::Lighting) => {
-            state.openrazer_available = false;
+            state.openrazer_available = state.lighting.available();
             crate::log::log_lighting_error();
             Ok(())
         }
@@ -509,6 +509,40 @@ mod tests {
         let v = handle_request(&mut st, Method::ApplyProfile, json!({"id":"default"}), 0).unwrap();
         assert_eq!(v["id"], "default");
         assert_eq!(st.openrazer_available, false);
+    }
+
+    #[test]
+    fn lighting_error_does_not_drop_device_or_latch_if_backend_still_up() {
+        struct PeerFrontendLighting;
+        impl LightingClient for PeerFrontendLighting {
+            fn apply(&mut self, _lighting: &Lighting) -> Result<(), ErrorCode> {
+                Err(ErrorCode::Lighting)
+            }
+            fn available(&self) -> bool {
+                true
+            }
+        }
+        let ready = state();
+        let mut st = DaemonState {
+            lighting: PeerFrontendLighting,
+            device_present: true,
+            openrazer_available: true,
+            paths: ready.paths,
+            engine: ready.engine,
+            recorder: ready.recorder,
+            active_id: None,
+            model: Some(DeviceModel::V2),
+            evdev_ok: true,
+            uinput_ok: true,
+            grab_conflict: None,
+        };
+        let v = handle_request(&mut st, Method::ApplyProfile, json!({"id":"default"}), 0).unwrap();
+        assert_eq!(v["id"], "default");
+        assert!(st.device_present);
+        assert!(st.openrazer_available);
+        let status = handle_request(&mut st, Method::GetStatus, json!({}), 1).unwrap();
+        assert_eq!(status["device"]["present"], true);
+        assert_eq!(status["openrazer"]["available"], true);
     }
 
     #[test]

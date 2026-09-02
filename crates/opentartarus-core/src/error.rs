@@ -44,7 +44,7 @@ impl ErrorCode {
         match self {
             Self::Permission => "OpenTartarus can’t talk to your keypad yet.",
             Self::Disconnect => "Tartarus disconnected.",
-            Self::Lighting => "Lighting needs OpenRazer.",
+            Self::Lighting => "Lighting needs OpenRazer or OpenRGB.",
             Self::GrabConflict => {
                 "Something else is using the Tartarus. Quit that app and reopen OpenTartarus."
             }

@@ -223,7 +223,7 @@ mod tests {
         );
         assert_eq!(
             ErrorCode::Lighting.user_message(),
-            "Lighting needs OpenRazer."
+            "Lighting needs OpenRazer or OpenRGB.",
         );
         assert_eq!(
             ErrorCode::GrabConflict.user_message(),

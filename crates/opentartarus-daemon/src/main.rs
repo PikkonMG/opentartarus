@@ -16,7 +16,7 @@ use opentartarus_daemon::device::{
     scan_interval_ms, snapshot_changed, DetectStatus, Detected, DeviceUiState,
 };
 use opentartarus_daemon::handler::{handle_request, DaemonState};
-use opentartarus_daemon::openrazer::OpenRazerClient;
+use opentartarus_daemon::{daemon_lighting, set_daemon_lighting_usb, DaemonLighting};
 use opentartarus_daemon::perms::{probe_evdev_readable, probe_uinput};
 use opentartarus_daemon::playback::{
     commit_if_engine_replaced, remap_physical_event, tick_engine, EngineEpoch,
@@ -152,7 +152,7 @@ async fn run() -> Result<(), ErrorCode> {
     let vid = found.as_ref().map(|detected| detected.vid);
     let pid = found.as_ref().map(|detected| detected.pid);
 
-    let lighting = OpenRazerClient::new(vid, pid);
+    let lighting = daemon_lighting(vid, pid);
     let openrazer_available = lighting.available();
     let mut state = DaemonState {
         paths: paths.clone(),
@@ -324,7 +324,7 @@ fn request_quit<L: LightingClient>(
 }
 
 fn device_loop(
-    state: Arc<Mutex<DaemonState<OpenRazerClient>>>,
+    state: Arc<Mutex<DaemonState<DaemonLighting>>>,
     sink: Arc<Mutex<Option<UinputSink>>>,
     events: broadcast::Sender<opentartarus_core::ipc::EventMsg>,
     quit: Arc<AtomicBool>,
@@ -474,7 +474,7 @@ fn device_loop(
 }
 
 fn tick_remap(
-    state: &Mutex<DaemonState<OpenRazerClient>>,
+    state: &Mutex<DaemonState<DaemonLighting>>,
     sink: &Mutex<Option<UinputSink>>,
     epoch: &EngineEpoch,
 ) {
@@ -482,7 +482,7 @@ fn tick_remap(
     tick_engine(state, sink, epoch, &mut clock);
 }
 
-fn idle_sleep(state: &Mutex<DaemonState<OpenRazerClient>>) -> Duration {
+fn idle_sleep(state: &Mutex<DaemonState<DaemonLighting>>) -> Duration {
     let st = state.lock().expect("daemon state");
     if st.engine.has_timed_work() {
         TICK_INTERVAL
@@ -492,7 +492,7 @@ fn idle_sleep(state: &Mutex<DaemonState<OpenRazerClient>>) -> Duration {
 }
 
 fn publish_idle_detect(
-    state: &Mutex<DaemonState<OpenRazerClient>>,
+    state: &Mutex<DaemonState<DaemonLighting>>,
     events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
     last: &mut Option<DeviceUiState>,
     next: DeviceUiState,
@@ -513,9 +513,12 @@ fn publish_idle_detect(
         None
     };
     match (vid, pid) {
-        (Some(vid), Some(pid)) if next.present => update_lighting_usb(&mut st.lighting, Some((vid, pid))),
+        (Some(vid), Some(pid)) if next.present => {
+            update_lighting_usb(&mut st.lighting, Some((vid, pid)))
+        }
         _ => update_lighting_usb(&mut st.lighting, None),
     }
+    st.openrazer_available = st.lighting.available();
     emit_event(events, EventMethod::DeviceChanged, device_event_params(&st));
     if let Some((code, os)) = error {
         let os_ref = if os.is_empty() { None } else { Some(os.as_str()) };
@@ -554,7 +557,7 @@ fn grab_nodes(nodes: &[PathBuf]) -> Result<Vec<evdev::Device>, (ErrorCode, Strin
 }
 
 fn on_device_appeared(
-    state: &Mutex<DaemonState<OpenRazerClient>>,
+    state: &Mutex<DaemonState<DaemonLighting>>,
     detected: &Detected,
     events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
     epoch: &EngineEpoch,
@@ -567,6 +570,7 @@ fn on_device_appeared(
     st.grab_conflict = None;
     st.engine = RemapEngine::new(detected.model);
     update_lighting_usb(&mut st.lighting, Some((detected.vid, detected.pid)));
+    st.openrazer_available = st.lighting.available();
     let active = st.active_id.clone();
     if let Some(id) = active {
         let applied = handle_request(&mut st, Method::ApplyProfile, json!({ "id": id }), now_ms());
@@ -579,7 +583,7 @@ fn on_device_appeared(
 }
 
 fn on_device_vanished(
-    state: &Mutex<DaemonState<OpenRazerClient>>,
+    state: &Mutex<DaemonState<DaemonLighting>>,
     events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
 ) {
     let mut st = state.lock().expect("daemon state");
@@ -596,6 +600,7 @@ fn on_device_vanished(
     st.model = None;
     st.grab_conflict = None;
     update_lighting_usb(&mut st.lighting, None);
+    st.openrazer_available = st.lighting.available();
     emit_event(events, EventMethod::DeviceChanged, device_event_params(&st));
 }
 
@@ -689,9 +694,6 @@ fn mouse_button_from_code(code: u16) -> Option<MouseButton> {
     None
 }
 
-fn update_lighting_usb(lighting: &mut OpenRazerClient, ids: Option<(u16, u16)>) {
-    match ids {
-        Some((vid, pid)) => lighting.set_usb(vid, pid),
-        None => lighting.clear_usb(),
-    }
+fn update_lighting_usb(lighting: &mut DaemonLighting, ids: Option<(u16, u16)>) {
+    set_daemon_lighting_usb(lighting, ids);
 }

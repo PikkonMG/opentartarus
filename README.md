@@ -1,6 +1,6 @@
 # OpenTartarus
 
-Linux app for the Razer Tartarus V2 (`1532:022b`) and Tartarus Pro (`1532:0244`). It uses Synapse-like profiles and key remaps. Lighting is a thin OpenRazer passthrough; without OpenRazer, remaps still work and lighting controls stay off.
+Linux app for the Razer Tartarus V2 (`1532:022b`) and Tartarus Pro (`1532:0244`). It uses Synapse-like profiles and key remaps. Lighting is a thin OpenRazer passthrough. If that daemon is down, it can use OpenRGB. Without either, remaps still work and lighting controls stay off.
 
 The remap process is a tray daemon. The UI is iced. Close the window and it hides; remaps keep running until you quit from the tray.
 
@@ -11,7 +11,15 @@ Source: https://github.com/PikkonMG/opentartarus
 - Linux
 - A Tartarus V2 or Tartarus Pro
 - Rust, to build from this tree
-- OpenRazer, if you want lighting (keys still work without it)
+- OpenRazer, if you want lighting (keys still work without it). Polychromatic and RazerGenie are frontends for that daemon, not a second driver.
+
+## Lighting and other Razer apps
+
+Polychromatic and RazerGenie talk to `openrazer-daemon` on the session bus name `org.razer`. They are frontends. You still install OpenRazer for lighting. Those apps do not replace the daemon or the `razerkbd` driver.
+
+OpenTartarus uses that same daemon, and the Tartarus V2 (`1532:022b`) / Tartarus Pro (`1532:0244`) sysfs nodes under `razerkbd`. You can keep Polychromatic or RazerGenie open. Remaps stay in OpenTartarus.
+
+If OpenRazer is not running, lighting can use OpenRGB. OpenRGB supports the Tartarus V2 (`1532:022b`).
 
 ## How to build and run
 

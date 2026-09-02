@@ -7,4 +7,10 @@ fn readme_uses_official_name_and_github() {
     assert!(!t.contains("OpenTaris"));
     assert!(!t.contains("systemctl"));
     assert!(!t.contains("sudo "));
+    assert!(t.contains("Polychromatic"));
+    assert!(t.contains("RazerGenie"));
+    assert!(t.contains("frontends"));
+    assert!(t.contains("org.razer"));
+    assert!(t.contains("OpenRGB"));
+    assert!(t.contains("1532:022b"));
 }
