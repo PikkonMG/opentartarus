@@ -10,3 +10,4 @@ opentartarus-core = { path = "../opentartarus-core" }
 tokio = { version = "1", features = ["full"] }
 serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
+evdev = { version = "0.13", features = ["tokio"] }
