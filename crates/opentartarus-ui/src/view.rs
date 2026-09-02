@@ -1,9 +1,9 @@
-use crate::app::{uses_color, App, Banner, LIGHTING_EFFECTS, Message};
-use crate::keys::COMBO_INPUT_ID;
+use crate::app::{uses_color, App, Banner, Message, LIGHTING_EFFECTS};
 use crate::keypad::{self, Keypad};
+use crate::keys::COMBO_INPUT_ID;
 use crate::theme::{
-    self, BIND_PANEL_WIDTH, COLOR_ACCENT, COLOR_BACKGROUND, COLOR_DANGER, COLOR_SURFACE, COLOR_TEXT,
-    LIGHTING_STRIP_HEIGHT, PROFILE_LIST_WIDTH,
+    self, BIND_PANEL_WIDTH, COLOR_ACCENT, COLOR_BACKGROUND, COLOR_DANGER, COLOR_SURFACE,
+    COLOR_TEXT, LIGHTING_STRIP_HEIGHT, PROFILE_LIST_WIDTH,
 };
 use iced::widget::{
     button, checkbox, column, container, pick_list, row, scrollable, slider, text, text_input,
@@ -12,9 +12,7 @@ use iced::widget::{
 use iced::{Background, Border, Color, Element, Length, Theme};
 use opentartarus_core::error::ErrorCode;
 use opentartarus_core::labels::bind_label;
-use opentartarus_core::types::{
-    Action, MouseButton, MouseTarget, ScrollDir,
-};
+use opentartarus_core::types::{Action, MouseButton, MouseTarget, ScrollDir};
 
 pub fn view(app: &App) -> Element<'_, Message> {
     let banner = banner_bar(app);
@@ -54,7 +52,7 @@ fn banner_bar(app: &App) -> Element<'_, Message> {
     };
     let (copy, show_fix) = match banner {
         Banner::Starting => (theme::BANNER_STARTING.to_string(), false),
-        Banner::CouldNotStart => (theme::BANNER_COULD_NOT_START.to_string(), false),
+        Banner::CouldNotStart(copy) => (copy, false),
         Banner::NoDevice => (theme::BANNER_NO_DEVICE.to_string(), false),
         Banner::Permission => (ErrorCode::Permission.user_message().to_string(), true),
         Banner::Disconnect => (ErrorCode::Disconnect.user_message().to_string(), false),
@@ -69,7 +67,9 @@ fn banner_bar(app: &App) -> Element<'_, Message> {
         Banner::SignOut => (theme::BANNER_SIGN_OUT.to_string(), false),
         Banner::Other(msg) => (msg, false),
     };
-    let mut row = row![text(copy).size(14)].spacing(10).align_y(iced::Alignment::Center);
+    let mut row = row![text(copy).size(14)]
+        .spacing(10)
+        .align_y(iced::Alignment::Center);
     if show_fix {
         row = row.push(
             button(text(theme::BUTTON_FIX_PERMISSIONS))
@@ -120,13 +120,10 @@ fn profile_list(app: &App) -> Element<'_, Message> {
         .on_press(Message::Quit)
         .style(danger_button);
     container(
-        column![
-            scrollable(list.padding(8)).height(Length::Fill),
-            quit,
-        ]
-        .spacing(8)
-        .padding(8)
-        .height(Length::Fill),
+        column![scrollable(list.padding(8)).height(Length::Fill), quit,]
+            .spacing(8)
+            .padding(8)
+            .height(Length::Fill),
     )
     .width(Length::Fixed(PROFILE_LIST_WIDTH))
     .height(Length::Fill)
@@ -161,17 +158,42 @@ fn bind_panel(app: &App) -> Element<'_, Message> {
             hold = hold.on_toggle(Message::HoldRepeat);
         }
         let mouse_row = row![
-            mouse_btn(theme::MOUSE_LEFT, MouseTarget::Button { button: MouseButton::Left }),
-            mouse_btn(theme::MOUSE_RIGHT, MouseTarget::Button { button: MouseButton::Right }),
-            mouse_btn(theme::MOUSE_MIDDLE, MouseTarget::Button { button: MouseButton::Middle }),
-            mouse_btn(theme::MOUSE_BACK, MouseTarget::Button { button: MouseButton::Back }),
+            mouse_btn(
+                theme::MOUSE_LEFT,
+                MouseTarget::Button {
+                    button: MouseButton::Left
+                }
+            ),
+            mouse_btn(
+                theme::MOUSE_RIGHT,
+                MouseTarget::Button {
+                    button: MouseButton::Right
+                }
+            ),
+            mouse_btn(
+                theme::MOUSE_MIDDLE,
+                MouseTarget::Button {
+                    button: MouseButton::Middle
+                }
+            ),
+            mouse_btn(
+                theme::MOUSE_BACK,
+                MouseTarget::Button {
+                    button: MouseButton::Back
+                }
+            ),
             mouse_btn(
                 theme::MOUSE_FORWARD,
                 MouseTarget::Button {
                     button: MouseButton::Forward
                 }
             ),
-            mouse_btn(theme::MOUSE_WHEEL_UP, MouseTarget::Scroll { scroll: ScrollDir::Up }),
+            mouse_btn(
+                theme::MOUSE_WHEEL_UP,
+                MouseTarget::Scroll {
+                    scroll: ScrollDir::Up
+                }
+            ),
             mouse_btn(
                 theme::MOUSE_WHEEL_DOWN,
                 MouseTarget::Scroll {
@@ -238,9 +260,9 @@ fn mouse_btn(label: &'static str, target: MouseTarget) -> Element<'static, Messa
 
 fn lighting_strip(app: &App) -> Element<'_, Message> {
     let mut row = row![].spacing(10).align_y(iced::Alignment::Center);
-    if !app.openrazer {
-        row = row.push(text(ErrorCode::Lighting.user_message()).size(13));
-    } else {
+    if let Some(copy) = app.lighting_footer_message() {
+        row = row.push(text(copy).size(13));
+    } else if app.openrazer {
         let selected = LIGHTING_EFFECTS
             .iter()
             .copied()
@@ -257,22 +279,28 @@ fn lighting_strip(app: &App) -> Element<'_, Message> {
                 app.lighting.brightness,
                 Message::LightingBrightness,
             )
-                .width(Length::Fixed(140.0)),
+            .width(Length::Fixed(140.0)),
         );
         if uses_color(app.lighting.effect) {
             let rgb = app.lighting.color.unwrap_or(theme::DEFAULT_LIGHT_COLOR);
             row = row.push(color_swatch(rgb));
             row = row.push(
-                slider(0..=theme::COLOR_CHANNEL_MAX, rgb[0], |v| Message::LightingColor(0, v))
-                    .width(80.0),
+                slider(0..=theme::COLOR_CHANNEL_MAX, rgb[0], |v| {
+                    Message::LightingColor(0, v)
+                })
+                .width(80.0),
             );
             row = row.push(
-                slider(0..=theme::COLOR_CHANNEL_MAX, rgb[1], |v| Message::LightingColor(1, v))
-                    .width(80.0),
+                slider(0..=theme::COLOR_CHANNEL_MAX, rgb[1], |v| {
+                    Message::LightingColor(1, v)
+                })
+                .width(80.0),
             );
             row = row.push(
-                slider(0..=theme::COLOR_CHANNEL_MAX, rgb[2], |v| Message::LightingColor(2, v))
-                    .width(80.0),
+                slider(0..=theme::COLOR_CHANNEL_MAX, rgb[2], |v| {
+                    Message::LightingColor(2, v)
+                })
+                .width(80.0),
             );
         }
     }

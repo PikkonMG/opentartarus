@@ -1,10 +1,11 @@
+pub mod binpath;
 pub mod codec;
 pub mod constants;
 pub mod error;
 pub mod ipc;
+pub mod keymap;
 pub mod labels;
 pub mod lighting;
-pub mod keymap;
 pub mod pack;
 pub mod paths;
 pub mod record;

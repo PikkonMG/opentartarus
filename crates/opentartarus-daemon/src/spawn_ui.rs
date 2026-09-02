@@ -1,17 +1,10 @@
+use opentartarus_core::binpath::resolve_bin_from_env;
 use std::process::{Child, Command, Stdio};
 
 pub const UI_BIN: &str = "opentartarus-ui";
 
 pub fn ui_command() -> Command {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join(UI_BIN);
-            if sibling.exists() {
-                return Command::new(sibling);
-            }
-        }
-    }
-    Command::new(UI_BIN)
+    Command::new(resolve_bin_from_env(UI_BIN))
 }
 
 pub fn spawn_ui() -> std::io::Result<Child> {

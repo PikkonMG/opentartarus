@@ -23,7 +23,11 @@ If OpenRazer is not running, lighting can use OpenRGB. OpenRGB supports the Tart
 
 ## How to build and run
 
-From this checkout, start the daemon (tray, remaps, lighting):
+The tray daemon is the process that remaps keys and talks to lighting. The window connects to `$XDG_RUNTIME_DIR/opentartarus/daemon.sock`.
+
+Daily use: start the daemon. It owns the tray. Open the window when you want the keypad UI.
+
+From this checkout, start the daemon:
 
 ```
 cargo run -p opentartarus-daemon
@@ -34,6 +38,10 @@ Then open the window:
 ```
 cargo run -p opentartarus-ui
 ```
+
+The window will also start the daemon if nothing is listening on that socket. It looks next to the UI binary, then at Cargo’s `CARGO_BIN_EXE_opentartarus_daemon` / `CARGO_TARGET_DIR` / `target/debug` and `target/release`. Build the daemon crate at least once so that binary exists. The names are not on PATH until you install them.
+
+If the window cannot start the tray, the red banner names the missing program, a permission error, or the socket path. That is not an OpenRazer message. Lighting copy only appears after the window is talking to the daemon.
 
 If `cargo` on your PATH is a rustup shim and fails with `unknown proxy name: Cursor-3.17.8-x86_64`, call the real binary instead:
 

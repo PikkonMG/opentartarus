@@ -4,10 +4,10 @@ use crate::keys::{
     submit_record_mouse_params, KeyCapture,
 };
 use crate::theme;
+use iced::advanced::widget::Id;
 use iced::futures::channel::mpsc;
 use iced::keyboard::key::Named;
 use iced::keyboard::{self, Key};
-use iced::advanced::widget::Id;
 use iced::mouse;
 use iced::window::{self, Mode};
 use iced::{event, Event, Subscription, Task, Theme};
@@ -45,7 +45,7 @@ pub struct ProfileRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Banner {
     Starting,
-    CouldNotStart,
+    CouldNotStart(String),
     NoDevice,
     Permission,
     Disconnect,
@@ -59,7 +59,7 @@ pub enum Banner {
 pub enum Message {
     IpcReady(mpsc::UnboundedSender<Outgoing>),
     DaemonStarting,
-    DaemonFailed,
+    DaemonFailed(String),
     DaemonConnected,
     DaemonStopping,
     IpcResponse {
@@ -198,9 +198,7 @@ impl App {
                 Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
                     Some(Message::ComboKey { key, modifiers })
                 }
-                Event::Mouse(mouse::Event::ButtonPressed(_)) => {
-                    Some(Message::RefreshComboFocus)
-                }
+                Event::Mouse(mouse::Event::ButtonPressed(_)) => Some(Message::RefreshComboFocus),
                 _ => None,
             }),
         ])
@@ -216,8 +214,9 @@ impl App {
                 self.phase = Phase::Connecting;
                 Task::none()
             }
-            Message::DaemonFailed => {
+            Message::DaemonFailed(message) => {
                 self.phase = Phase::FailedStart;
+                self.last_error = Some(message);
                 Task::none()
             }
             Message::DaemonConnected => {
@@ -272,9 +271,7 @@ impl App {
                 Task::none()
             }
             Message::ClearBinding => {
-                if let (Some(profile_id), Some(key_id)) =
-                    (self.profile_id(), self.selected_key)
-                {
+                if let (Some(profile_id), Some(key_id)) = (self.profile_id(), self.selected_key) {
                     self.bindings.remove(&key_id);
                     self.send(
                         Method::ClearBinding,
@@ -419,10 +416,9 @@ impl App {
                 }
                 Task::none()
             }
-            Message::FixPermissions => Task::perform(
-                client::run_fix_permissions(),
-                Message::FixPermissionsDone,
-            ),
+            Message::FixPermissions => {
+                Task::perform(client::run_fix_permissions(), Message::FixPermissionsDone)
+            }
             Message::FixPermissionsDone(outcome) => {
                 match outcome {
                     FixPermissionsOutcome::Success => {
@@ -461,7 +457,11 @@ impl App {
         }
         match self.phase {
             Phase::Connecting => Some(Banner::Starting),
-            Phase::FailedStart => Some(Banner::CouldNotStart),
+            Phase::FailedStart => Some(Banner::CouldNotStart(
+                self.last_error.clone().unwrap_or_else(|| {
+                    theme::could_not_start_message(theme::START_REASON_TRAY_DID_NOT_START)
+                }),
+            )),
             Phase::Running => {
                 if let Some(stored) = &self.grab_conflict {
                     Some(Banner::GrabConflict {
@@ -507,6 +507,17 @@ impl App {
         self.ever_present && !self.device_present
     }
 
+    pub fn lighting_footer_message(&self) -> Option<&'static str> {
+        if self.phase != Phase::Running {
+            return None;
+        }
+        if self.openrazer {
+            None
+        } else {
+            Some(ErrorCode::Lighting.user_message())
+        }
+    }
+
     fn send(&self, method: Method, params: Value) {
         if let Some(tx) = &self.ipc_tx {
             let _ = tx.unbounded_send(Outgoing { method, params });
@@ -523,7 +534,10 @@ impl App {
         let mods = map_modifiers(modifiers);
         match capture_window_key(self.recording, combo_focused, token, mods) {
             KeyCapture::SubmitRecord { key, modifiers } => {
-                self.send(Method::SubmitRecord, submit_record_key_params(key, &modifiers));
+                self.send(
+                    Method::SubmitRecord,
+                    submit_record_key_params(key, &modifiers),
+                );
                 self.recording = false;
                 self.combo_text.clear();
             }
@@ -614,7 +628,9 @@ impl App {
             }
             EventMethod::Recorded => {
                 self.recording = false;
-                if let Ok(action) = serde_json::from_value::<Action>(params.get("action").cloned().unwrap_or(Value::Null)) {
+                if let Ok(action) = serde_json::from_value::<Action>(
+                    params.get("action").cloned().unwrap_or(Value::Null),
+                ) {
                     if let Some(key_id) = params
                         .get("key_id")
                         .and_then(|v| serde_json::from_value::<KeyId>(v.clone()).ok())
@@ -739,7 +755,8 @@ impl App {
             .unwrap_or_default();
         let mut ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
         ids = opentartarus_core::labels::profile_row_order(&ids);
-        let mut by_id: BTreeMap<String, Row> = rows.into_iter().map(|r| (r.id.clone(), r)).collect();
+        let mut by_id: BTreeMap<String, Row> =
+            rows.into_iter().map(|r| (r.id.clone(), r)).collect();
         self.profiles = ids
             .into_iter()
             .filter_map(|id| by_id.remove(&id))
@@ -958,7 +975,9 @@ fn map_key_token(key: &Key) -> Option<KeyToken> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client;
     use opentartarus_core::ipc::EventMethod;
+    use std::path::Path;
 
     fn running_app() -> App {
         let mut app = App::default();
@@ -979,10 +998,7 @@ mod tests {
                 "message": sentence,
             }),
         });
-        assert_eq!(
-            app.banner(),
-            Some(Banner::GrabConflict { name: None })
-        );
+        assert_eq!(app.banner(), Some(Banner::GrabConflict { name: None }));
     }
 
     #[test]
@@ -1035,10 +1051,7 @@ mod tests {
             }),
         });
         assert_eq!(app.last_error.as_deref(), Some("Not recording."));
-        assert_eq!(
-            app.banner(),
-            Some(Banner::Other("Not recording.".into()))
-        );
+        assert_eq!(app.banner(), Some(Banner::Other("Not recording.".into())));
     }
 
     #[test]
@@ -1103,5 +1116,27 @@ mod tests {
         assert!(rx.try_recv().is_err());
         assert_eq!(close_action(false), CloseAction::HideToTray);
         assert_eq!(close_action(true), CloseAction::ExitUi);
+    }
+
+    #[test]
+    fn failed_start_shows_specific_reason_not_lighting_copy() {
+        let mut app = App::default();
+        let reason =
+            client::connect_timeout_message(Path::new("/run/user/1000/opentartarus/daemon.sock"));
+        let _ = app.update(Message::DaemonFailed(reason.clone()));
+        assert_eq!(app.phase, Phase::FailedStart);
+        assert_eq!(app.banner(), Some(Banner::CouldNotStart(reason)));
+        assert!(app.lighting_footer_message().is_none());
+        assert!(!app.openrazer);
+    }
+
+    #[test]
+    fn running_without_lighting_backend_uses_lighting_copy() {
+        let mut app = running_app();
+        app.openrazer = false;
+        assert_eq!(
+            app.lighting_footer_message(),
+            Some(ErrorCode::Lighting.user_message())
+        );
     }
 }

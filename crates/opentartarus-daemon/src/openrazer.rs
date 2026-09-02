@@ -41,23 +41,43 @@ impl OpenRazerClient {
 
 impl LightingClient for OpenRazerClient {
     fn apply(&mut self, lighting: &Lighting) -> Result<(), ErrorCode> {
-        if session_has_openrazer() && apply_via_dbus(lighting, self.vid, self.pid).is_ok() {
+        let vid = self.vid;
+        let pid = self.pid;
+        let dbus_ok = off_tokio(|| {
+            session_has_openrazer_blocking() && apply_via_dbus(lighting, vid, pid).is_ok()
+        });
+        if dbus_ok {
             return Ok(());
         }
-        apply_via_sysfs(lighting, self.vid, self.pid)
+        apply_via_sysfs(lighting, vid, pid)
     }
 
     fn available(&self) -> bool {
         debug_assert!(!should_request_openrazer_bus_name());
-        openrazer_lighting_ready(
-            session_has_openrazer(),
-            find_sysfs_node(self.vid, self.pid).is_some(),
-            0,
-        )
+        let tartarus_sysfs = find_sysfs_node(self.vid, self.pid).is_some();
+        let daemon_owns_bus = if tartarus_sysfs {
+            true
+        } else {
+            session_has_openrazer()
+        };
+        openrazer_lighting_ready(daemon_owns_bus, tartarus_sysfs, 0)
     }
 }
 
+fn off_tokio<T: Send>(f: impl FnOnce() -> T + Send) -> T {
+    std::thread::scope(|scope| {
+        scope
+            .spawn(f)
+            .join()
+            .unwrap_or_else(|payload| std::panic::resume_unwind(payload))
+    })
+}
+
 fn session_has_openrazer() -> bool {
+    off_tokio(session_has_openrazer_blocking)
+}
+
+fn session_has_openrazer_blocking() -> bool {
     let Ok(conn) = zbus::blocking::Connection::session() else {
         return false;
     };
@@ -70,7 +90,11 @@ fn session_has_openrazer() -> bool {
     proxy.name_has_owner(name).unwrap_or(false)
 }
 
-fn apply_via_dbus(lighting: &Lighting, vid: Option<u16>, pid: Option<u16>) -> Result<(), ErrorCode> {
+fn apply_via_dbus(
+    lighting: &Lighting,
+    vid: Option<u16>,
+    pid: Option<u16>,
+) -> Result<(), ErrorCode> {
     let conn = zbus::blocking::Connection::session().map_err(|_| ErrorCode::Lighting)?;
     let reply = conn
         .call_method(
@@ -81,7 +105,10 @@ fn apply_via_dbus(lighting: &Lighting, vid: Option<u16>, pid: Option<u16>) -> Re
             &(),
         )
         .map_err(|_| ErrorCode::Lighting)?;
-    let serials: Vec<String> = reply.body().deserialize().map_err(|_| ErrorCode::Lighting)?;
+    let serials: Vec<String> = reply
+        .body()
+        .deserialize()
+        .map_err(|_| ErrorCode::Lighting)?;
     let mut applied = false;
     for serial in serials {
         let path = format!("/org/razer/device/{serial}");
@@ -237,16 +264,16 @@ fn apply_via_sysfs(
         ),
         LightingEffect::Spectrum => write_sysfs(&node, "matrix_effect_spectrum", b"1"),
         LightingEffect::Breath => write_sysfs(&node, "matrix_effect_breath", &rgb),
-        LightingEffect::Reactive => {
-            write_sysfs(&node, "matrix_effect_reactive", &[EFFECT_SPEED, rgb[0], rgb[1], rgb[2]])
-        }
-        LightingEffect::Starlight => {
-            write_sysfs(
-                &node,
-                "matrix_effect_starlight",
-                &[EFFECT_SPEED, rgb[0], rgb[1], rgb[2]],
-            )
-        }
+        LightingEffect::Reactive => write_sysfs(
+            &node,
+            "matrix_effect_reactive",
+            &[EFFECT_SPEED, rgb[0], rgb[1], rgb[2]],
+        ),
+        LightingEffect::Starlight => write_sysfs(
+            &node,
+            "matrix_effect_starlight",
+            &[EFFECT_SPEED, rgb[0], rgb[1], rgb[2]],
+        ),
     };
     let brightness = brightness_to_razer(lighting.brightness).to_string();
     let bright_ok = write_sysfs(&node, "matrix_brightness", brightness.as_bytes());
@@ -301,10 +328,26 @@ mod tests {
 
     #[test]
     fn sysfs_name_matches_tartarus_ids() {
-        assert!(sysfs_name_matches("0003:1532:022B.001B", USB_VID_RAZER, USB_PID_TARTARUS_V2));
-        assert!(sysfs_name_matches("0003:1532:022b.001b", USB_VID_RAZER, USB_PID_TARTARUS_V2));
-        assert!(sysfs_name_matches("0003:1532:0244.0001", USB_VID_RAZER, USB_PID_TARTARUS_PRO));
-        assert!(!sysfs_name_matches("0003:1532:008F.0001", USB_VID_RAZER, USB_PID_TARTARUS_V2));
+        assert!(sysfs_name_matches(
+            "0003:1532:022B.001B",
+            USB_VID_RAZER,
+            USB_PID_TARTARUS_V2
+        ));
+        assert!(sysfs_name_matches(
+            "0003:1532:022b.001b",
+            USB_VID_RAZER,
+            USB_PID_TARTARUS_V2
+        ));
+        assert!(sysfs_name_matches(
+            "0003:1532:0244.0001",
+            USB_VID_RAZER,
+            USB_PID_TARTARUS_PRO
+        ));
+        assert!(!sysfs_name_matches(
+            "0003:1532:008F.0001",
+            USB_VID_RAZER,
+            USB_PID_TARTARUS_V2
+        ));
         assert_eq!(OPENRAZER_BUS_NAME, "org.razer");
         assert!(!should_request_openrazer_bus_name());
     }
@@ -344,5 +387,15 @@ mod tests {
         assert!(only_naga
             .iter()
             .all(|name| !sysfs_entry_matches(name, None, None)));
+    }
+
+    #[tokio::test]
+    async fn openrazer_bus_probe_does_not_panic_inside_tokio_runtime() {
+        use opentartarus_core::constants::USB_PID_NAGA_PRO_1;
+        let _owned = session_has_openrazer();
+        let naga = OpenRazerClient::new(Some(USB_VID_RAZER), Some(USB_PID_NAGA_PRO_1));
+        let _ = naga.available();
+        let tartarus = OpenRazerClient::new(Some(USB_VID_RAZER), Some(USB_PID_TARTARUS_V2));
+        let _ = tartarus.available();
     }
 }

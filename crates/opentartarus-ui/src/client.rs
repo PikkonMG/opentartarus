@@ -1,17 +1,18 @@
 use crate::app::Message;
+use crate::theme;
 use iced::futures::channel::mpsc;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use iced::Subscription;
+use opentartarus_core::binpath::resolve_bin_from_env;
 use opentartarus_core::codec::{decode_frame, encode_frame};
 use opentartarus_core::constants::IPC_MAX_MESSAGE_BYTES;
 use opentartarus_core::error::ErrorCode;
-use opentartarus_core::ipc::{
-    EventMethod, EventMsg, Method, ReqTag, RequestMsg, ResponseMsg,
-};
+use opentartarus_core::ipc::{EventMethod, EventMsg, Method, ReqTag, RequestMsg, ResponseMsg};
 use opentartarus_core::paths::Paths;
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::Path;
+use std::io::ErrorKind;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -67,7 +68,10 @@ async fn connect_with_retry(
     if let Ok(stream) = UnixStream::connect(socket).await {
         return Some(stream);
     }
-    spawn_daemon();
+    if let Err(message) = spawn_daemon() {
+        let _ = output.send(Message::DaemonFailed(message)).await;
+        return None;
+    }
     let _ = output.send(Message::DaemonStarting).await;
     let started = Instant::now();
     loop {
@@ -75,32 +79,46 @@ async fn connect_with_retry(
             return Some(stream);
         }
         if started.elapsed() >= CONNECT_TIMEOUT {
-            let _ = output.send(Message::DaemonFailed).await;
+            let _ = output
+                .send(Message::DaemonFailed(connect_timeout_message(socket)))
+                .await;
             return None;
         }
         sleep(CONNECT_RETRY).await;
     }
 }
 
-fn spawn_daemon() {
-    let mut cmd = daemon_command();
-    let _ = cmd
+fn spawn_daemon() -> Result<(), String> {
+    let bin = daemon_bin();
+    std::process::Command::new(&bin)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn();
+        .spawn()
+        .map(|_| ())
+        .map_err(|err| spawn_failure_message(&bin, &err))
 }
 
-fn daemon_command() -> std::process::Command {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let sibling = dir.join(DAEMON_BIN);
-            if sibling.exists() {
-                return std::process::Command::new(sibling);
-            }
+pub fn daemon_bin() -> PathBuf {
+    resolve_bin_from_env(DAEMON_BIN)
+}
+
+pub fn spawn_failure_message(bin: &Path, err: &std::io::Error) -> String {
+    let reason = match err.kind() {
+        ErrorKind::NotFound => format!("Couldn’t find the tray program ({}).", bin.display()),
+        ErrorKind::PermissionDenied => {
+            format!("No permission to start the tray ({}).", bin.display())
         }
-    }
-    std::process::Command::new(DAEMON_BIN)
+        _ => format!("Couldn’t start the tray ({}): {err}.", bin.display()),
+    };
+    theme::could_not_start_message(&reason)
+}
+
+pub fn connect_timeout_message(socket: &Path) -> String {
+    theme::could_not_start_message(&format!(
+        "Couldn’t connect to the tray ({}).",
+        socket.display()
+    ))
 }
 
 async fn pump_connection(
@@ -225,9 +243,11 @@ fn try_decode(buf: &mut Vec<u8>) -> Result<Option<Value>, ErrorCode> {
 
 #[cfg(test)]
 mod tests {
-    use super::try_decode;
+    use super::{connect_timeout_message, spawn_failure_message, try_decode};
     use opentartarus_core::constants::IPC_MAX_MESSAGE_BYTES;
     use opentartarus_core::error::ErrorCode;
+    use std::io::ErrorKind;
+    use std::path::Path;
 
     #[test]
     fn try_decode_rejects_oversize_length_before_buffering() {
@@ -239,6 +259,24 @@ mod tests {
     fn try_decode_rejects_zero_length_before_buffering() {
         let mut buf = 0u32.to_le_bytes().to_vec();
         assert_eq!(try_decode(&mut buf).unwrap_err(), ErrorCode::InvalidProfile);
+    }
+
+    #[test]
+    fn spawn_not_found_names_the_bin() {
+        let err = std::io::Error::new(ErrorKind::NotFound, "not found");
+        let message =
+            spawn_failure_message(Path::new("/repo/target/debug/opentartarus-daemon"), &err);
+        assert!(message.starts_with("OpenTartarus couldn’t start."));
+        assert!(message.contains("/repo/target/debug/opentartarus-daemon"));
+        assert!(message.contains("Couldn’t find the tray program"));
+    }
+
+    #[test]
+    fn connect_timeout_names_the_socket() {
+        let message = connect_timeout_message(Path::new("/run/user/1000/opentartarus/daemon.sock"));
+        assert!(message.starts_with("OpenTartarus couldn’t start."));
+        assert!(message.contains("/run/user/1000/opentartarus/daemon.sock"));
+        assert!(!message.contains("Try opening it again"));
     }
 }
 
@@ -260,4 +298,3 @@ pub enum FixPermissionsOutcome {
     Cancelled,
     Failed,
 }
-

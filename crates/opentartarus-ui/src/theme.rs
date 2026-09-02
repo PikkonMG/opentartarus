@@ -40,7 +40,8 @@ pub const DEFAULT_LIGHT_COLOR: [u8; 3] = [255, 255, 255];
 pub const DEFAULT_BRIGHTNESS: u8 = 80;
 
 pub const BANNER_STARTING: &str = "Starting…";
-pub const BANNER_COULD_NOT_START: &str = "OpenTartarus couldn’t start. Try opening it again.";
+pub const BANNER_COULD_NOT_START_PREFIX: &str = "OpenTartarus couldn’t start.";
+pub const START_REASON_TRAY_DID_NOT_START: &str = "The tray didn’t start.";
 pub const BANNER_NO_DEVICE: &str = "No Tartarus found. Unplug it, wait a second, plug it back in.";
 pub const BANNER_UNPLUG_AFTER_FIX: &str = "Unplug the Tartarus, wait a second, plug it back in.";
 pub const BANNER_SIGN_OUT: &str = "Sign out and sign back in, then open OpenTartarus again.";
@@ -79,4 +80,8 @@ pub fn with_opacity(color: Color, opacity: f32) -> Color {
         a: color.a * opacity,
         ..color
     }
+}
+
+pub fn could_not_start_message(reason: &str) -> String {
+    format!("{BANNER_COULD_NOT_START_PREFIX} {reason}")
 }

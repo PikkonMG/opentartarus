@@ -134,10 +134,7 @@ mod tests {
             })
             .unwrap_err();
         assert_eq!(err, ErrorCode::Lighting);
-        assert_eq!(
-            err.user_message(),
-            "Lighting needs OpenRazer or OpenRGB."
-        );
+        assert_eq!(err.user_message(), "Lighting needs OpenRazer or OpenRGB.");
     }
 
     fn sample() -> Lighting {
@@ -149,14 +146,40 @@ mod tests {
     }
 
     #[test]
+    fn lighting_available_when_org_razer_owned() {
+        assert!(openrazer_lighting_ready(true, false, 0));
+        assert!(openrazer_lighting_ready(true, false, 2));
+        assert!(openrazer_lighting_ready(false, true, 0));
+        assert!(!openrazer_lighting_ready(false, false, 0));
+    }
+
+    #[test]
     fn daemon_up_means_lighting_even_with_other_frontends() {
         const POLYCHROMATIC_AND_RAZERGENIE: usize = 2;
-        assert!(openrazer_lighting_ready(true, false, POLYCHROMATIC_AND_RAZERGENIE));
-        assert!(openrazer_lighting_ready(true, true, POLYCHROMATIC_AND_RAZERGENIE));
-        assert!(openrazer_lighting_ready(false, true, POLYCHROMATIC_AND_RAZERGENIE));
-        assert!(!openrazer_lighting_ready(false, false, POLYCHROMATIC_AND_RAZERGENIE));
+        assert!(openrazer_lighting_ready(
+            true,
+            false,
+            POLYCHROMATIC_AND_RAZERGENIE
+        ));
+        assert!(openrazer_lighting_ready(
+            true,
+            true,
+            POLYCHROMATIC_AND_RAZERGENIE
+        ));
+        assert!(openrazer_lighting_ready(
+            false,
+            true,
+            POLYCHROMATIC_AND_RAZERGENIE
+        ));
+        assert!(!openrazer_lighting_ready(
+            false,
+            false,
+            POLYCHROMATIC_AND_RAZERGENIE
+        ));
         assert!(!openrazer_lighting_ready(false, false, 0));
-        assert!(!peer_frontends_make_openrazer_missing(POLYCHROMATIC_AND_RAZERGENIE));
+        assert!(!peer_frontends_make_openrazer_missing(
+            POLYCHROMATIC_AND_RAZERGENIE
+        ));
         assert!(!should_request_openrazer_bus_name());
     }
 
@@ -174,7 +197,10 @@ mod tests {
         );
         assert!(chain.available());
         chain.apply(&sample()).unwrap();
-        assert_eq!(chain.primary().last.as_ref().unwrap().effect, LightingEffect::Spectrum);
+        assert_eq!(
+            chain.primary().last.as_ref().unwrap().effect,
+            LightingEffect::Spectrum
+        );
         assert!(chain.fallback().last.is_none());
     }
 
