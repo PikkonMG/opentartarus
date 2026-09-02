@@ -93,6 +93,29 @@ pub fn remap_physical_event<L, C>(
     restore_engine_if_current(&mut st, engine, epoch_at_take, epoch);
 }
 
+pub fn tick_engine<L, C>(
+    state: &Mutex<DaemonState<L>>,
+    sink: &Mutex<Option<UinputSink>>,
+    epoch: &EngineEpoch,
+    clock: &mut C,
+) where
+    L: LightingClient,
+    C: Clock,
+{
+    let (mut engine, epoch_at_take) = {
+        let mut st = state.lock().expect("daemon state");
+        if !st.engine.has_timed_work() {
+            return;
+        }
+        let epoch_at_take = epoch.load();
+        (take_engine(&mut st), epoch_at_take)
+    };
+    let mut emit = BriefLockSink::new(sink);
+    engine.tick(&mut emit, clock);
+    let mut st = state.lock().expect("daemon state");
+    restore_engine_if_current(&mut st, engine, epoch_at_take, epoch);
+}
+
 fn take_engine<L: LightingClient>(state: &mut DaemonState<L>) -> RemapEngine {
     let model = state.model.unwrap_or(DeviceModel::V2);
     std::mem::replace(&mut state.engine, RemapEngine::new(model))
@@ -129,26 +152,6 @@ mod tests {
     const KP01_NATIVE_CODE: u16 = 2;
     const KEY_DOWN: i32 = 1;
 
-    struct UnlockProbeClock {
-        state: Arc<Mutex<DaemonState<RecordingLighting>>>,
-        sink: Arc<Mutex<Option<UinputSink>>>,
-        state_free: AtomicBool,
-        sink_free: AtomicBool,
-    }
-
-    impl Clock for UnlockProbeClock {
-        fn now_ms(&self) -> u64 {
-            0
-        }
-
-        fn sleep_ms(&mut self, _ms: u64) {
-            self.state_free
-                .store(self.state.try_lock().is_ok(), Ordering::SeqCst);
-            self.sink_free
-                .store(self.sink.try_lock().is_ok(), Ordering::SeqCst);
-        }
-    }
-
     fn state() -> DaemonState<RecordingLighting> {
         let n = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -174,66 +177,28 @@ mod tests {
         }
     }
 
+    struct PanicOnSleep;
+
+    impl Clock for PanicOnSleep {
+        fn now_ms(&self) -> u64 {
+            0
+        }
+        fn sleep_ms(&mut self, _ms: u64) {
+            panic!("macro handle must not sleep");
+        }
+    }
+
     #[test]
-    fn sleep_does_not_hold_state_or_sink_locks() {
+    fn macro_handle_does_not_sleep() {
         let mut st = state();
-        handle_request(
-            &mut st,
-            Method::ApplyProfile,
-            json!({ "id": "default" }),
-            0,
-        )
-        .unwrap();
-        handle_request(
-            &mut st,
-            Method::SetBinding,
-            json!({
-                "profile_id": "default",
-                "key_id": "kp01",
-                "action": {
-                    "type": "macro",
-                    "steps": [{
-                        "kind": "key",
-                        "key": "q",
-                        "modifiers": [],
-                        "edge": "down",
-                        "delay_ms": 25
-                    }]
-                }
-            }),
-            0,
-        )
-        .unwrap();
+        bind_default_macro(&mut st);
         let state = Arc::new(Mutex::new(st));
         let sink = Arc::new(Mutex::new(None));
         let epoch = EngineEpoch::new();
-        let mut clock = UnlockProbeClock {
-            state: Arc::clone(&state),
-            sink: Arc::clone(&sink),
-            state_free: AtomicBool::new(false),
-            sink_free: AtomicBool::new(false),
-        };
-        remap_physical_event(
-            &state,
-            &sink,
-            &epoch,
-            RawEvent {
-                vid: USB_VID_RAZER,
-                pid: USB_PID_TARTARUS_V2,
-                ev_type: EV_KEY,
-                code: KP01_NATIVE_CODE,
-                value: KEY_DOWN,
-            },
-            &mut clock,
-        );
-        assert!(
-            clock.state_free.load(Ordering::SeqCst),
-            "state mutex must be free during Clock::sleep_ms"
-        );
-        assert!(
-            clock.sink_free.load(Ordering::SeqCst),
-            "uinput mutex must be free during Clock::sleep_ms"
-        );
+        remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut PanicOnSleep);
+        assert!(state.try_lock().is_ok());
+        assert!(sink.try_lock().is_ok());
+        assert!(state.lock().expect("daemon state").engine.has_timed_work());
     }
 
     struct Collect(Vec<u16>);
@@ -281,14 +246,14 @@ mod tests {
         apply_id: &'static str,
         method: Method,
         ok: bool,
+        did: AtomicBool,
     }
 
-    impl Clock for ApplyDuringSleep {
-        fn now_ms(&self) -> u64 {
-            0
-        }
-
-        fn sleep_ms(&mut self, _ms: u64) {
+    impl ApplyDuringSleep {
+        fn apply_once(&self) {
+            if self.did.swap(true, Ordering::SeqCst) {
+                return;
+            }
             let mut st = self.state.lock().expect("daemon state");
             let result = if self.ok {
                 handle_request(
@@ -308,6 +273,17 @@ mod tests {
                 handle_request(&mut st, Method::ApplyProfile, json!({ "id": "missing" }), 0)
             };
             commit_if_engine_replaced(result.is_ok(), Some(self.method), &self.epoch);
+        }
+    }
+
+    impl Clock for ApplyDuringSleep {
+        fn now_ms(&self) -> u64 {
+            self.apply_once();
+            0
+        }
+
+        fn sleep_ms(&mut self, _ms: u64) {
+            self.apply_once();
         }
     }
 
@@ -348,6 +324,7 @@ mod tests {
             apply_id: "league-of-legends",
             method: Method::ApplyProfile,
             ok: true,
+            did: AtomicBool::new(false),
         };
         remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut clock);
         let mut st = state.lock().expect("daemon state");
@@ -376,15 +353,14 @@ mod tests {
             apply_id: "default",
             method: Method::SetLighting,
             ok: true,
+            did: AtomicBool::new(false),
         };
         remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut clock);
         let mut st = state.lock().expect("daemon state");
-        let codes = probe_codes(&mut st.engine, KP01_NATIVE_CODE);
+        let codes = probe_codes(&mut st.engine, KP02_NATIVE_CODE);
         assert_eq!(
             codes,
-            vec![opentartarus_core::keymap::token_to_evdev(
-                opentartarus_core::types::KeyToken::Q
-            )],
+            vec![KP02_NATIVE_CODE],
             "SetLighting must not bump; restore keeps the live engine"
         );
         assert_eq!(epoch.load(), 0);
@@ -403,15 +379,14 @@ mod tests {
             apply_id: "missing",
             method: Method::ApplyProfile,
             ok: false,
+            did: AtomicBool::new(false),
         };
         remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut clock);
         let mut st = state.lock().expect("daemon state");
-        let codes = probe_codes(&mut st.engine, KP01_NATIVE_CODE);
+        let codes = probe_codes(&mut st.engine, KP02_NATIVE_CODE);
         assert_eq!(
             codes,
-            vec![opentartarus_core::keymap::token_to_evdev(
-                opentartarus_core::types::KeyToken::Q
-            )],
+            vec![KP02_NATIVE_CODE],
             "failed ApplyProfile must not bump; restore keeps the live engine"
         );
         assert_eq!(epoch.load(), 0);

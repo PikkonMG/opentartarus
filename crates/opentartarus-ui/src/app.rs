@@ -42,7 +42,7 @@ pub struct ProfileRow {
     pub can_revert: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Banner {
     Starting,
     CouldNotStart,
@@ -428,13 +428,10 @@ impl App {
             Phase::Connecting => Some(Banner::Starting),
             Phase::FailedStart => Some(Banner::CouldNotStart),
             Phase::Running => {
-                if let Some(name) = &self.grab_conflict {
-                    let name = if name.is_empty() {
-                        None
-                    } else {
-                        Some(name.clone())
-                    };
-                    Some(Banner::GrabConflict { name })
+                if let Some(stored) = &self.grab_conflict {
+                    Some(Banner::GrabConflict {
+                        name: grab_conflict_name(stored),
+                    })
                 } else if !self.evdev_ok || !self.uinput_ok {
                     if self.after_fix_permissions && !self.evdev_ok {
                         Some(Banner::SignOut)
@@ -725,6 +722,9 @@ impl App {
     }
 
     fn apply_error(&mut self, code: ErrorCode, message: Option<String>) {
+        let display = message
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| code.user_message().to_string());
         match code {
             ErrorCode::Permission => {
                 self.evdev_ok = false;
@@ -736,24 +736,32 @@ impl App {
                 self.openrazer = false;
             }
             ErrorCode::GrabConflict => {
-                self.grab_conflict = message.clone();
+                self.grab_conflict = Some(display);
             }
             ErrorCode::AlreadyRunning => {}
-            other => {
-                self.last_error = Some(other.user_message().to_string());
+            ErrorCode::InvalidProfile
+            | ErrorCode::UnknownKey
+            | ErrorCode::RecordBusy
+            | ErrorCode::NotFound
+            | ErrorCode::Io => {
+                self.last_error = Some(display);
             }
         }
-        if matches!(
-            code,
-            ErrorCode::InvalidProfile
-                | ErrorCode::UnknownKey
-                | ErrorCode::RecordBusy
-                | ErrorCode::NotFound
-                | ErrorCode::Io
-        ) {
-            self.last_error = Some(code.user_message().to_string());
-        }
     }
+}
+
+fn grab_conflict_name(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if trimmed == ErrorCode::GrabConflict.user_message() {
+        return None;
+    }
+    if trimmed.contains('/') {
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 pub fn uses_color(effect: LightingEffect) -> bool {
@@ -906,5 +914,92 @@ fn map_key_token(key: &Key) -> Option<KeyToken> {
         | Key::Named(Named::Super)
         | Key::Named(Named::Meta) => None,
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use opentartarus_core::ipc::EventMethod;
+
+    fn running_app() -> App {
+        let mut app = App::default();
+        app.phase = Phase::Running;
+        app.device_present = true;
+        app.ever_present = true;
+        app
+    }
+
+    #[test]
+    fn grab_conflict_error_does_not_treat_spec_sentence_as_name() {
+        let mut app = running_app();
+        let sentence = ErrorCode::GrabConflict.user_message();
+        let _ = app.update(Message::IpcEvent {
+            method: EventMethod::Error,
+            params: json!({
+                "code": "grab_conflict",
+                "message": sentence,
+            }),
+        });
+        assert_eq!(
+            app.banner(),
+            Some(Banner::GrabConflict { name: None })
+        );
+    }
+
+    #[test]
+    fn grab_conflict_appends_only_a_process_name() {
+        let mut app = running_app();
+        let _ = app.update(Message::IpcEvent {
+            method: EventMethod::Error,
+            params: json!({
+                "code": "grab_conflict",
+                "message": "openrazer-daemon",
+            }),
+        });
+        assert_eq!(
+            app.banner(),
+            Some(Banner::GrabConflict {
+                name: Some("openrazer-daemon".into()),
+            })
+        );
+    }
+
+    #[test]
+    fn grab_conflict_status_path_is_not_a_name() {
+        let mut app = running_app();
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::GetStatus),
+            ok: true,
+            result: Some(json!({
+                "device": { "present": true, "model": "v2", "vid": "1532", "pid": "022b" },
+                "openrazer": { "available": true },
+                "active_profile_id": null,
+                "record": { "active": false, "key_id": null, "deadline_ms": null },
+                "permissions": { "uinput": true, "evdev": true },
+                "grab_conflict": "/dev/input/event270",
+            })),
+            error: None,
+        });
+        assert_eq!(app.banner(), Some(Banner::GrabConflict { name: None }));
+    }
+
+    #[test]
+    fn submit_record_error_shows_wire_message() {
+        let mut app = running_app();
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::SubmitRecord),
+            ok: false,
+            result: None,
+            error: Some(WireError {
+                code: ErrorCode::NotFound,
+                message: "Not recording.".into(),
+            }),
+        });
+        assert_eq!(app.last_error.as_deref(), Some("Not recording."));
+        assert_eq!(
+            app.banner(),
+            Some(Banner::Other("Not recording.".into()))
+        );
     }
 }

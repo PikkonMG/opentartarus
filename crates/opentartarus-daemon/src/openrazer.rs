@@ -98,12 +98,23 @@ fn dbus_device_matches(
     vid: Option<u16>,
     pid: Option<u16>,
 ) -> bool {
-    let (Some(want_vid), Some(want_pid)) = (vid, pid) else {
-        return true;
+    lighting_ids_match(dbus_vid_pid(conn, path), vid, pid)
+}
+
+pub(crate) fn lighting_ids_match(
+    got: Option<(u16, u16)>,
+    want_vid: Option<u16>,
+    want_pid: Option<u16>,
+) -> bool {
+    let Some((got_vid, got_pid)) = got else {
+        return false;
     };
-    match dbus_vid_pid(conn, path) {
-        Some((got_vid, got_pid)) => got_vid == want_vid && got_pid == want_pid,
-        None => true,
+    if !opentartarus_core::remap::allow_grab(got_vid, got_pid) {
+        return false;
+    }
+    match (want_vid, want_pid) {
+        (Some(want_vid), Some(want_pid)) => got_vid == want_vid && got_pid == want_pid,
+        _ => true,
     }
 }
 
@@ -244,7 +255,6 @@ fn write_sysfs(node: &Path, name: &str, bytes: &[u8]) -> bool {
 
 pub fn find_sysfs_node(vid: Option<u16>, pid: Option<u16>) -> Option<PathBuf> {
     let dir = fs::read_dir(RAZERKBD_SYSFS).ok()?;
-    let mut fallback = None;
     for entry in dir.flatten() {
         let path = entry.path();
         if !path.join("matrix_brightness").is_file() {
@@ -252,19 +262,23 @@ pub fn find_sysfs_node(vid: Option<u16>, pid: Option<u16>) -> Option<PathBuf> {
         }
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if let (Some(vid), Some(pid)) = (vid, pid) {
-            if sysfs_name_matches(&name, vid, pid) {
-                return Some(path);
-            }
-        } else if sysfs_name_matches(&name, USB_VID_RAZER, USB_PID_TARTARUS_V2)
-            || sysfs_name_matches(&name, USB_VID_RAZER, USB_PID_TARTARUS_PRO)
-        {
+        if sysfs_entry_matches(&name, vid, pid) {
             return Some(path);
-        } else if fallback.is_none() {
-            fallback = Some(path);
         }
     }
-    fallback
+    None
+}
+
+pub(crate) fn sysfs_entry_matches(name: &str, vid: Option<u16>, pid: Option<u16>) -> bool {
+    match (vid, pid) {
+        (Some(vid), Some(pid)) => {
+            opentartarus_core::remap::allow_grab(vid, pid) && sysfs_name_matches(name, vid, pid)
+        }
+        _ => {
+            sysfs_name_matches(name, USB_VID_RAZER, USB_PID_TARTARUS_V2)
+                || sysfs_name_matches(name, USB_VID_RAZER, USB_PID_TARTARUS_PRO)
+        }
+    }
 }
 
 pub fn sysfs_name_matches(name: &str, vid: u16, pid: u16) -> bool {
@@ -284,5 +298,42 @@ mod tests {
         assert!(sysfs_name_matches("0003:1532:0244.0001", USB_VID_RAZER, USB_PID_TARTARUS_PRO));
         assert!(!sysfs_name_matches("0003:1532:008F.0001", USB_VID_RAZER, USB_PID_TARTARUS_V2));
         assert_eq!(OPENRAZER_BUS_NAME, "org.razer");
+    }
+
+    #[test]
+    fn lighting_refuses_naga_and_unknown_ids() {
+        use opentartarus_core::constants::USB_PID_NAGA_PRO_1;
+        assert!(!lighting_ids_match(None, None, None));
+        assert!(!lighting_ids_match(
+            Some((USB_VID_RAZER, USB_PID_NAGA_PRO_1)),
+            None,
+            None
+        ));
+        assert!(lighting_ids_match(
+            Some((USB_VID_RAZER, USB_PID_TARTARUS_V2)),
+            None,
+            None
+        ));
+        assert!(lighting_ids_match(
+            Some((USB_VID_RAZER, USB_PID_TARTARUS_PRO)),
+            None,
+            None
+        ));
+        assert!(!lighting_ids_match(
+            Some((USB_VID_RAZER, USB_PID_TARTARUS_V2)),
+            Some(USB_VID_RAZER),
+            Some(USB_PID_TARTARUS_PRO)
+        ));
+        assert!(!lighting_ids_match(
+            None,
+            Some(USB_VID_RAZER),
+            Some(USB_PID_TARTARUS_V2)
+        ));
+        assert!(!sysfs_entry_matches("0003:1532:008F.0001", None, None));
+        assert!(sysfs_entry_matches("0003:1532:022B.001B", None, None));
+        let only_naga = ["0003:1532:008F.0001", "0003:1532:0090.0002"];
+        assert!(only_naga
+            .iter()
+            .all(|name| !sysfs_entry_matches(name, None, None)));
     }
 }

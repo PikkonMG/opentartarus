@@ -4,7 +4,8 @@ use opentartarus_core::codec::{decode_frame, encode_frame};
 use opentartarus_core::constants::IPC_MAX_MESSAGE_BYTES;
 use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::{
-    parse_request, EventMethod, EventMsg, EventTag, Method, ResTag, ResponseMsg, WireError,
+    parse_request, request_error_message, EventMethod, EventMsg, EventTag, Method, ResTag,
+    ResponseMsg, WireError,
 };
 use opentartarus_core::lighting::LightingClient;
 use serde_json::{json, Value};
@@ -28,11 +29,21 @@ pub fn bind_exclusive(socket: &Path) -> io::Result<UnixListener> {
         fs::create_dir_all(parent)?;
         fs::set_permissions(parent, fs::Permissions::from_mode(SOCKET_DIR_MODE))?;
     }
-    match UnixListener::bind(socket) {
-        Ok(listener) => Ok(listener),
-        Err(err) if err.kind() == ErrorKind::AddrInUse => Err(err),
-        Err(err) => Err(err),
+    if socket.exists() {
+        match std::os::unix::net::UnixStream::connect(socket) {
+            Ok(_) => {
+                return Err(io::Error::new(
+                    ErrorKind::AddrInUse,
+                    "already_running",
+                ));
+            }
+            Err(err) if err.kind() == ErrorKind::PermissionDenied => return Err(err),
+            Err(_) => {
+                fs::remove_file(socket)?;
+            }
+        }
     }
+    UnixListener::bind(socket)
 }
 
 pub fn emit_event(tx: &broadcast::Sender<EventMsg>, method: EventMethod, params: Value) {
@@ -248,15 +259,15 @@ pub fn dispatch_json<L: LightingClient>(state: &mut DaemonState<L>, bytes: &[u8]
     match parse_request(&value) {
         Ok(req) => {
             let result = handle_request(state, req.method, req.params, now_ms);
-            encode_response(req.id, result)
+            encode_response(req.id, result, Some(req.method))
         }
-        Err(code) => {
+        Err(err) => {
             let id = value
                 .get("id")
                 .and_then(Value::as_str)
                 .map(str::to_owned)
                 .unwrap_or_else(generated_id);
-            encode_error(id, code)
+            encode_wire_error(id, err)
         }
     }
 }
@@ -266,10 +277,21 @@ fn generated_id() -> String {
 }
 
 fn encode_error(id: String, code: ErrorCode) -> Vec<u8> {
-    encode_response(id, Err(code))
+    encode_response(id, Err(code), None)
 }
 
-fn encode_response(id: String, result: Result<Value, ErrorCode>) -> Vec<u8> {
+fn encode_wire_error(id: String, error: WireError) -> Vec<u8> {
+    let msg = ResponseMsg {
+        r#type: ResTag,
+        id,
+        ok: false,
+        result: None,
+        error: Some(error),
+    };
+    serde_json::to_vec(&msg).expect("ResponseMsg is serializable")
+}
+
+fn encode_response(id: String, result: Result<Value, ErrorCode>, method: Option<Method>) -> Vec<u8> {
     let msg = match result {
         Ok(value) => ResponseMsg {
             r#type: ResTag,
@@ -285,7 +307,7 @@ fn encode_response(id: String, result: Result<Value, ErrorCode>) -> Vec<u8> {
             result: None,
             error: Some(WireError {
                 code,
-                message: code.user_message().to_string(),
+                message: request_error_message(code, method).to_string(),
             }),
         },
     };
@@ -349,5 +371,52 @@ mod tests {
         let v: Value = serde_json::from_slice(&out).unwrap();
         assert_eq!(v["ok"], false);
         assert_eq!(v["error"]["code"], "not_found");
+        assert_eq!(v["error"]["message"], "Unknown method");
+    }
+
+    #[test]
+    fn dispatch_json_submit_record_without_session_is_not_recording() {
+        let mut st = state();
+        let bytes = br#"{"type":"req","id":"u3","method":"SubmitRecord","params":{"key":"a","modifiers":[]}}"#;
+        let out = dispatch_json(&mut st, bytes);
+        let v: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(v["ok"], false);
+        assert_eq!(v["error"]["code"], "not_found");
+        assert_eq!(v["error"]["message"], "Not recording.");
+    }
+
+    #[tokio::test]
+    async fn stale_socket_is_unlinked_then_bound() {
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("opentartarus-sock-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("daemon.sock");
+        let stale = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        drop(stale);
+        assert!(socket.exists());
+        let listener = bind_exclusive(&socket).expect("dead leftover socket must be replaced");
+        drop(listener);
+        let _ = std::fs::remove_file(&socket);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn live_socket_stays_already_running() {
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("opentartarus-live-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("daemon.sock");
+        let live = bind_exclusive(&socket).unwrap();
+        let err = bind_exclusive(&socket).expect_err("live listener must win");
+        assert_eq!(err.kind(), ErrorKind::AddrInUse);
+        drop(live);
+        let _ = std::fs::remove_file(&socket);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

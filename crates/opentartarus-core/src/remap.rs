@@ -6,13 +6,28 @@ use crate::keymap::{
     analog_axis_ratio, decode_hat, modifier_to_evdev, mouse_button_to_evdev, token_to_evdev,
     KeyMap, ABS_HAT0X, ABS_HAT0Y, ABS_X, ABS_Y, EV_ABS, EV_KEY, EV_REL, REL_WHEEL,
 };
-use crate::types::{Action, DeviceModel, Edge, KeyId, MacroKind, MouseTarget, Profile, ScrollDir};
+use crate::types::{
+    Action, DeviceModel, Edge, KeyId, MacroKind, MacroStep, MouseTarget, Profile, ScrollDir,
+};
 use std::collections::BTreeMap;
 
 const KEY_DOWN: i32 = 1;
 const KEY_REPEAT: i32 = 2;
 const KEY_UP: i32 = 0;
 const ANALOG_AXIS_CENTER: i32 = 128;
+
+#[derive(Debug, Clone)]
+enum MacroOp {
+    Emit { kind: MacroKind, value: i32 },
+    Wait(u64),
+}
+
+#[derive(Debug, Clone)]
+struct MacroPlay {
+    ops: Vec<MacroOp>,
+    index: usize,
+    due_ms: u64,
+}
 
 pub fn allow_grab(vid: u16, pid: u16) -> bool {
     vid == USB_VID_RAZER && (pid == USB_PID_TARTARUS_V2 || pid == USB_PID_TARTARUS_PRO)
@@ -49,6 +64,7 @@ pub struct RemapEngine {
     map: KeyMap,
     table: BTreeMap<KeyId, Action>,
     macro_busy: bool,
+    macro_play: Option<MacroPlay>,
     hold: Option<(KeyId, u64, u32)>,
     hat_x: i32,
     hat_y: i32,
@@ -72,6 +88,7 @@ impl RemapEngine {
             map,
             table: BTreeMap::new(),
             macro_busy: false,
+            macro_play: None,
             hold: None,
             hat_x: 0,
             hat_y: 0,
@@ -87,6 +104,77 @@ impl RemapEngine {
 
     pub fn apply_profile(&mut self, p: &Profile) {
         self.table = p.bindings_for_model(self.model);
+    }
+
+    pub fn has_timed_work(&self) -> bool {
+        self.macro_play.is_some() || self.hold.is_some()
+    }
+
+    pub fn pending_deadline_ms(&self) -> Option<u64> {
+        if let Some(play) = &self.macro_play {
+            return Some(play.due_ms);
+        }
+        if let Some((_, last_ms, rate_ms)) = self.hold {
+            return Some(last_ms.saturating_add(u64::from(rate_ms)));
+        }
+        None
+    }
+
+    pub fn tick(&mut self, sink: &mut impl EventSink, clock: &mut impl Clock) {
+        self.tick_macro(sink, clock);
+        self.tick_hold(sink, clock);
+    }
+
+    fn tick_macro(&mut self, sink: &mut impl EventSink, clock: &mut impl Clock) {
+        let now = clock.now_ms();
+        let Some(play) = self.macro_play.as_mut() else {
+            return;
+        };
+        while play.index < play.ops.len() {
+            if now < play.due_ms {
+                return;
+            }
+            match play.ops[play.index].clone() {
+                MacroOp::Emit { kind, value } => {
+                    play_kind_edge(&kind, value, sink);
+                    play.index += 1;
+                }
+                MacroOp::Wait(ms) => {
+                    play.due_ms = play.due_ms.saturating_add(ms);
+                    play.index += 1;
+                    if now < play.due_ms {
+                        return;
+                    }
+                }
+            }
+        }
+        if now < play.due_ms {
+            return;
+        }
+        self.macro_play = None;
+        self.macro_busy = false;
+    }
+
+    fn tick_hold(&mut self, sink: &mut impl EventSink, clock: &mut impl Clock) {
+        let Some((key_id, last_ms, rate_ms)) = self.hold else {
+            return;
+        };
+        let Some(Action::HoldRepeat { inner, .. }) = self.table.get(&key_id).cloned() else {
+            return;
+        };
+        let rate = u64::from(rate_ms);
+        if rate == 0 {
+            return;
+        }
+        let now = clock.now_ms();
+        let mut last = last_ms;
+        while now.saturating_sub(last) >= rate {
+            last = last.saturating_add(rate);
+            play_action_edge(&inner, KEY_DOWN, sink);
+        }
+        if last != last_ms {
+            self.hold = Some((key_id, last, rate_ms));
+        }
     }
 
     pub fn handle(&mut self, ev: RawEvent, sink: &mut impl EventSink, clock: &mut impl Clock) {
@@ -209,8 +297,8 @@ impl RemapEngine {
             Action::Macro { .. } if self.macro_busy => {}
             Action::Macro { steps } => {
                 self.macro_busy = true;
-                play_macro(steps, sink, clock);
-                self.macro_busy = false;
+                self.macro_play = Some(compile_macro(steps, clock.now_ms()));
+                self.tick_macro(sink, clock);
             }
             Action::HoldRepeat { inner, rate_ms } => {
                 play_action_edge(inner, KEY_DOWN, sink);
@@ -222,25 +310,11 @@ impl RemapEngine {
 
     fn play_repeat(
         &mut self,
-        key_id: KeyId,
-        action: &Action,
-        sink: &mut impl EventSink,
-        clock: &mut impl Clock,
+        _key_id: KeyId,
+        _action: &Action,
+        _sink: &mut impl EventSink,
+        _clock: &mut impl Clock,
     ) {
-        let Action::HoldRepeat { inner, rate_ms } = action else {
-            return;
-        };
-        let Some((held_id, last_ms, held_rate)) = self.hold else {
-            return;
-        };
-        if held_id != key_id {
-            return;
-        }
-        let now = clock.now_ms();
-        if now.saturating_sub(last_ms) >= u64::from(*rate_ms) {
-            play_action_edge(inner, KEY_DOWN, sink);
-            self.hold = Some((key_id, now, held_rate));
-        }
     }
 
     fn play_release(&mut self, action: &Action, sink: &mut impl EventSink) {
@@ -275,22 +349,38 @@ fn set_analog_pressed(engine: &mut RemapEngine, id: KeyId, value: bool) {
     }
 }
 
-fn play_macro(
-    steps: &[crate::types::MacroStep],
-    sink: &mut impl EventSink,
-    clock: &mut impl Clock,
-) {
+fn compile_macro(steps: &[MacroStep], now_ms: u64) -> MacroPlay {
+    let mut ops = Vec::new();
     for step in steps {
         match step.edge {
-            Edge::Down => play_kind_edge(&step.kind, KEY_DOWN, sink),
-            Edge::Up => play_kind_edge(&step.kind, KEY_UP, sink),
+            Edge::Down => ops.push(MacroOp::Emit {
+                kind: step.kind.clone(),
+                value: KEY_DOWN,
+            }),
+            Edge::Up => ops.push(MacroOp::Emit {
+                kind: step.kind.clone(),
+                value: KEY_UP,
+            }),
             Edge::Tap => {
-                play_kind_edge(&step.kind, KEY_DOWN, sink);
-                clock.sleep_ms(TAP_HOLD_MS);
-                play_kind_edge(&step.kind, KEY_UP, sink);
+                ops.push(MacroOp::Emit {
+                    kind: step.kind.clone(),
+                    value: KEY_DOWN,
+                });
+                ops.push(MacroOp::Wait(TAP_HOLD_MS));
+                ops.push(MacroOp::Emit {
+                    kind: step.kind.clone(),
+                    value: KEY_UP,
+                });
             }
         }
-        clock.sleep_ms(u64::from(step.delay_ms));
+        if step.delay_ms > 0 {
+            ops.push(MacroOp::Wait(u64::from(step.delay_ms)));
+        }
+    }
+    MacroPlay {
+        ops,
+        index: 0,
+        due_ms: now_ms,
     }
 }
 
@@ -503,6 +593,14 @@ mod tests {
         let mut s = FakeSink(vec![]);
         let mut c = FakeClock { t: 0 };
         e.handle(press_kp01(), &mut s, &mut c);
+        while e.has_timed_work() {
+            if let Some(due) = e.pending_deadline_ms() {
+                if c.t < due {
+                    c.t = due;
+                }
+            }
+            e.tick(&mut s, &mut c);
+        }
         assert!(c.t >= 50);
         let one = crate::keymap::token_to_evdev(KeyToken::Num1);
         let two = crate::keymap::token_to_evdev(KeyToken::Num2);
@@ -766,6 +864,28 @@ mod tests {
         let mut c = FakeClock { t: 0 };
         e.handle(press_kp01(), &mut s, &mut c);
         c.t = 40;
+        e.tick(&mut s, &mut c);
+        let ecode = crate::keymap::token_to_evdev(KeyToken::E);
+        let downs =
+            s.0.iter()
+                .filter(|x| x.code == ecode && x.value == 1)
+                .count();
+        assert_eq!(downs, 2);
+    }
+
+    #[test]
+    fn hold_repeat_ignores_kernel_auto_repeat() {
+        let mut e = engine_with(Action::HoldRepeat {
+            inner: Box::new(Action::Key {
+                key: KeyToken::E,
+                modifiers: vec![],
+            }),
+            rate_ms: 40,
+        });
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        e.handle(press_kp01(), &mut s, &mut c);
+        c.t = 40;
         e.handle(
             RawEvent {
                 value: 2,
@@ -779,6 +899,75 @@ mod tests {
             s.0.iter()
                 .filter(|x| x.code == ecode && x.value == 1)
                 .count();
+        assert_eq!(downs, 1);
+        e.tick(&mut s, &mut c);
+        let downs =
+            s.0.iter()
+                .filter(|x| x.code == ecode && x.value == 1)
+                .count();
         assert_eq!(downs, 2);
+    }
+
+    #[test]
+    fn macro_press_does_not_sleep_and_other_keys_remap() {
+        use crate::types::{Edge, MacroKind, MacroStep};
+        let mut p = Profile {
+            id: "t".into(),
+            name: "t".into(),
+            game: crate::types::GameId::Default,
+            device_models: vec![DeviceModel::V2],
+            bindings: BTreeMap::new(),
+            lighting: Lighting {
+                effect: LightingEffect::None,
+                brightness: 80,
+                color: None,
+            },
+            unknown_key_ids: false,
+        };
+        p.bindings.insert(
+            KeyId::Kp01,
+            Action::Macro {
+                steps: vec![MacroStep {
+                    kind: MacroKind::Key {
+                        key: KeyToken::Num1,
+                        modifiers: vec![],
+                    },
+                    edge: Edge::Tap,
+                    delay_ms: 50,
+                }],
+            },
+        );
+        p.bindings.insert(
+            KeyId::Kp02,
+            Action::Key {
+                key: KeyToken::Q,
+                modifiers: vec![],
+            },
+        );
+        let mut e = RemapEngine::new(DeviceModel::V2);
+        e.apply_profile(&p);
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        e.handle(press_kp01(), &mut s, &mut c);
+        assert_eq!(c.t, 0, "macro must not sleep inside handle");
+        assert!(e.has_timed_work());
+        let kp02 = RawEvent {
+            vid: USB_VID_RAZER,
+            pid: USB_PID_TARTARUS_V2,
+            ev_type: 1,
+            code: 3,
+            value: 1,
+        };
+        e.handle(kp02, &mut s, &mut c);
+        let q = crate::keymap::token_to_evdev(KeyToken::Q);
+        assert!(s.0.iter().any(|x| x.code == q && x.value == 1));
+        let one = crate::keymap::token_to_evdev(KeyToken::Num1);
+        e.handle(press_kp01(), &mut s, &mut c);
+        let ones = s
+            .0
+            .iter()
+            .filter(|x| x.code == one && x.value == 1)
+            .count();
+        assert_eq!(ones, 1, "second macro press is ignored while busy");
     }
 }

@@ -3,6 +3,7 @@ use iced::futures::channel::mpsc;
 use iced::futures::{SinkExt, Stream, StreamExt};
 use iced::Subscription;
 use opentartarus_core::codec::{decode_frame, encode_frame};
+use opentartarus_core::constants::IPC_MAX_MESSAGE_BYTES;
 use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::{
     EventMethod, EventMsg, Method, ReqTag, RequestMsg, ResponseMsg,
@@ -208,8 +209,11 @@ fn try_decode(buf: &mut Vec<u8>) -> Result<Option<Value>, ErrorCode> {
     if buf.len() < 4 {
         return Ok(None);
     }
-    let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as usize;
-    if buf.len() < 4 + len {
+    let len = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+    if len == 0 || len > IPC_MAX_MESSAGE_BYTES {
+        return Err(ErrorCode::InvalidProfile);
+    }
+    if buf.len() < 4 + len as usize {
         return Ok(None);
     }
     let (payload, consumed) = decode_frame(buf)?;
@@ -217,6 +221,25 @@ fn try_decode(buf: &mut Vec<u8>) -> Result<Option<Value>, ErrorCode> {
     serde_json::from_slice(&payload)
         .map(Some)
         .map_err(|_| ErrorCode::InvalidProfile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::try_decode;
+    use opentartarus_core::constants::IPC_MAX_MESSAGE_BYTES;
+    use opentartarus_core::error::ErrorCode;
+
+    #[test]
+    fn try_decode_rejects_oversize_length_before_buffering() {
+        let mut buf = (IPC_MAX_MESSAGE_BYTES + 1).to_le_bytes().to_vec();
+        assert_eq!(try_decode(&mut buf).unwrap_err(), ErrorCode::InvalidProfile);
+    }
+
+    #[test]
+    fn try_decode_rejects_zero_length_before_buffering() {
+        let mut buf = 0u32.to_le_bytes().to_vec();
+        assert_eq!(try_decode(&mut buf).unwrap_err(), ErrorCode::InvalidProfile);
+    }
 }
 
 pub async fn run_fix_permissions() -> FixPermissionsOutcome {

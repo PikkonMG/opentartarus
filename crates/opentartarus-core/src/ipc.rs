@@ -111,15 +111,37 @@ pub struct EventMsg {
     pub params: Value,
 }
 
-pub fn parse_request(v: &Value) -> Result<RequestMsg, ErrorCode> {
+pub const UNKNOWN_METHOD_MESSAGE: &str = "Unknown method";
+pub const NOT_RECORDING_MESSAGE: &str = "Not recording.";
+
+impl From<ErrorCode> for WireError {
+    fn from(code: ErrorCode) -> Self {
+        Self {
+            code,
+            message: code.user_message().to_string(),
+        }
+    }
+}
+
+pub fn request_error_message(code: ErrorCode, method: Option<Method>) -> &'static str {
+    match (code, method) {
+        (ErrorCode::NotFound, Some(Method::SubmitRecord)) => NOT_RECORDING_MESSAGE,
+        _ => code.user_message(),
+    }
+}
+
+pub fn parse_request(v: &Value) -> Result<RequestMsg, WireError> {
     serde_json::from_value(v.clone()).map_err(map_request_error)
 }
 
-fn map_request_error(err: serde_json::Error) -> ErrorCode {
+fn map_request_error(err: serde_json::Error) -> WireError {
     if err.to_string().contains("unknown variant") {
-        ErrorCode::NotFound
+        WireError {
+            code: ErrorCode::NotFound,
+            message: UNKNOWN_METHOD_MESSAGE.to_string(),
+        }
     } else {
-        ErrorCode::InvalidProfile
+        ErrorCode::InvalidProfile.into()
     }
 }
 
@@ -139,6 +161,8 @@ mod ipc_tests {
     #[test]
     fn unknown_method_is_not_found() {
         let v = serde_json::json!({"type":"req","id":"u1","method":"Explode","params":{}});
-        assert_eq!(parse_request(&v).unwrap_err(), ErrorCode::NotFound);
+        let err = parse_request(&v).unwrap_err();
+        assert_eq!(err.code, ErrorCode::NotFound);
+        assert_eq!(err.message, "Unknown method");
     }
 }

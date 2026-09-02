@@ -270,6 +270,9 @@ fn submit_record<L: LightingClient>(
     state: &mut DaemonState<L>,
     params: &Value,
 ) -> Result<Value, ErrorCode> {
+    if !state.recorder.is_active() {
+        return Err(ErrorCode::NotFound);
+    }
     let profile_id = state.active_id.clone().ok_or(ErrorCode::NotFound)?;
     let outcome = if let Some(key) = params.get("key") {
         let key: KeyToken =
@@ -552,6 +555,20 @@ mod tests {
         assert_eq!(shown, json!({}));
         let quit = handle_request(&mut st, Method::QuitDaemon, json!({}), 4).unwrap();
         assert_eq!(quit["stopping"], true);
+    }
+
+    #[test]
+    fn submit_record_without_session_is_not_found() {
+        let mut st = state();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id":"default"}), 0).unwrap();
+        let err = handle_request(
+            &mut st,
+            Method::SubmitRecord,
+            json!({"key":"a","modifiers":[]}),
+            1,
+        )
+        .unwrap_err();
+        assert_eq!(err, ErrorCode::NotFound);
     }
 
     #[test]

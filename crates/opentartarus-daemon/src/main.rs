@@ -18,7 +18,7 @@ use opentartarus_daemon::handler::{handle_request, DaemonState};
 use opentartarus_daemon::openrazer::OpenRazerClient;
 use opentartarus_daemon::perms::{probe_evdev_readable, probe_uinput};
 use opentartarus_daemon::playback::{
-    commit_if_engine_replaced, remap_physical_event, EngineEpoch,
+    commit_if_engine_replaced, remap_physical_event, tick_engine, EngineEpoch,
 };
 use opentartarus_daemon::server::{accept_loop, bind_exclusive, emit_event};
 use opentartarus_daemon::spawn_ui::UiSupervisor;
@@ -36,7 +36,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
 const DEFAULT_PROFILE_NAME: &str = "Default";
-const POLL_INTERVAL: Duration = Duration::from_millis(250);
+const POLL_INTERVAL_MS: u64 = 250;
+const POLL_INTERVAL: Duration = Duration::from_millis(POLL_INTERVAL_MS);
+const TICK_INTERVAL_MS: u64 = 10;
+const TICK_INTERVAL: Duration = Duration::from_millis(TICK_INTERVAL_MS);
 const KEY_DOWN: i32 = 1;
 const EV_SYN: u16 = 0;
 const ALREADY_RUNNING_EXIT: i32 = 1;
@@ -351,7 +354,7 @@ fn device_loop(
                         let mut st = state.lock().expect("daemon state");
                         st.device_present = true;
                         st.model = Some(detected.model);
-                        st.grab_conflict = Some(detected.nodes.first().map(|p| p.display().to_string()).unwrap_or_default());
+                        st.grab_conflict = None;
                         if code == ErrorCode::GrabConflict {
                             st.evdev_ok = true;
                         } else {
@@ -410,7 +413,8 @@ fn device_loop(
             continue;
         }
         if pending.is_empty() {
-            std::thread::sleep(POLL_INTERVAL);
+            tick_remap(&state, &sink, &epoch);
+            std::thread::sleep(idle_sleep(&state));
             continue;
         }
         for (ev_type, code, value) in pending {
@@ -431,6 +435,25 @@ fn device_loop(
                 },
             );
         }
+        tick_remap(&state, &sink, &epoch);
+    }
+}
+
+fn tick_remap(
+    state: &Mutex<DaemonState<OpenRazerClient>>,
+    sink: &Mutex<Option<UinputSink>>,
+    epoch: &EngineEpoch,
+) {
+    let mut clock = SystemClock;
+    tick_engine(state, sink, epoch, &mut clock);
+}
+
+fn idle_sleep(state: &Mutex<DaemonState<OpenRazerClient>>) -> Duration {
+    let st = state.lock().expect("daemon state");
+    if st.engine.has_timed_work() {
+        TICK_INTERVAL
+    } else {
+        POLL_INTERVAL
     }
 }
 
