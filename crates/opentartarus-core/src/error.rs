@@ -16,6 +16,30 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            Self::Permission => "permission",
+            Self::Disconnect => "disconnect",
+            Self::Lighting => "lighting",
+            Self::GrabConflict => "grab_conflict",
+            Self::InvalidProfile => "invalid_profile",
+            Self::UnknownKey => "unknown_key",
+            Self::RecordBusy => "record_busy",
+            Self::NotFound => "not_found",
+            Self::Io => "io",
+            Self::AlreadyRunning => "already_running",
+        }
+    }
+
+    pub fn log_line(self, os: Option<&str>) -> String {
+        format!(
+            "{} {} os={}",
+            self.wire_name(),
+            self.user_message(),
+            os.unwrap_or("")
+        )
+    }
+
     pub fn user_message(self) -> &'static str {
         match self {
             Self::Permission => "OpenTartarus can’t talk to your keypad yet.",
