@@ -1,20 +1,16 @@
-# Dependencies
-docs/superpowers/
+# Rust — keep Cargo.lock tracked (this is an application)
+/target/
+**/*.rs.bk
 
-# Build outputs
+# Build leftovers and in-tree packages
 out/
 release/
 dist/
 build/
 .cache/
-
-# IDE / editors
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-.history/
+*.deb
+*.rpm
+*.AppImage
 
 # OS
 .DS_Store
@@ -22,16 +18,17 @@ Thumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 
-# Environment
-.env
-.env.local
-.env.*.local
-.env.development
-.env.production
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.history/
 
-# Signing & secrets — code-signing material and credentials, never commit.
-# Release binaries are currently unsigned (see AGENTS.md Distribution), but
-# a leaked signing key or cert bundle is still a security incident.
+# Env / secrets
+.env
+.env.*
 *.pem
 *.key
 *.p12
@@ -39,28 +36,16 @@ $RECYCLE.BIN/
 *.mobileprovision
 *.provisionprofile
 secrets/
-.npmrc.local
 
 # Logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
 
-# Local app state (developer-only)
-.pi-desktop-gui/
-.pi/
-.pi-desktop/
-.pi-subagents/
-
-# Agent context — local-only memory and architecture notes
+# Agent / local notebooks (do not commit)
 MEMORY.md
 AGENTS.md
-
-# AI Coding Agents
-.serena/
+docs/superpowers/
+.superpowers/
+.cursor/
 .claude/
 .claude-code/
 .codex/
@@ -71,35 +56,22 @@ AGENTS.md
 .continue/
 .openhands/
 .agents/
-.superpowers/
-
-# AI IDEs
-.cursor/
+.serena/
 .windsurf/
 .zed/
-
-# MCP
 .mcp/
 .mcp-server/
 .mcpservers/
 .context7/
 .playwright-mcp/
-
-# Agent Memory / Knowledge
 .openmemory/
 .mem0/
 .memory/
 .knowledge/
 .context/
-
-# Local Developer Config
 .fleet/
 
-# Local Runtime Environments
+# Local runtimes and worktrees
 .venv/
-.env/
-
-# Worktrees / Local Sandboxes
 .worktrees/
 .sandbox/
-/target
