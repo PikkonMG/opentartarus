@@ -15,3 +15,12 @@ Linux profiles and key customization for the Razer Tartarus V2 and Tartarus Pro.
 Close the window whenever you want — remaps keep working. Quit from the tray icon when you want them to stop.
 
 Lighting uses OpenRazer. If OpenRazer is not installed, keys still work and lighting controls stay off.
+
+## Layout
+
+- `crates/` — application source
+  - `opentartarus-core` — profile format, remap types, IPC, shipped game layouts in `profiles/`
+  - `opentartarus-daemon` — tray process, remaps, lighting
+  - `opentartarus-ui` — iced window
+  - `opentartarus-fix-permissions` — polkit helper that installs the udev rule
+- `packaging/` — udev, systemd user unit, polkit policy, desktop entry, login autostart
