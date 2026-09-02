@@ -1,0 +1,8 @@
+{
+  "id": "default",
+  "name": "Default",
+  "game": "default",
+  "device_models": ["v2", "pro"],
+  "bindings": {},
+  "lighting": { "effect": "none", "brightness": 80 }
+}

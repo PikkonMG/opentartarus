@@ -1,0 +1,33 @@
+{
+  "id": "dota-2",
+  "name": "Dota 2",
+  "game": "dota-2",
+  "device_models": ["v2", "pro"],
+  "bindings": {
+    "kp01": { "type": "key", "key": "q", "modifiers": [] },
+    "kp02": { "type": "key", "key": "w", "modifiers": [] },
+    "kp03": { "type": "key", "key": "e", "modifiers": [] },
+    "kp04": { "type": "key", "key": "r", "modifiers": [] },
+    "kp05": { "type": "key", "key": "d", "modifiers": [] },
+    "kp06": { "type": "key", "key": "f", "modifiers": [] },
+    "kp07": { "type": "key", "key": "z", "modifiers": [] },
+    "kp08": { "type": "key", "key": "x", "modifiers": [] },
+    "kp09": { "type": "key", "key": "c", "modifiers": [] },
+    "kp10": { "type": "key", "key": "1", "modifiers": [] },
+    "kp11": { "type": "key", "key": "2", "modifiers": [] },
+    "kp12": { "type": "key", "key": "3", "modifiers": [] },
+    "kp13": { "type": "key", "key": "4", "modifiers": [] },
+    "kp14": { "type": "key", "key": "5", "modifiers": [] },
+    "kp15": { "type": "key", "key": "6", "modifiers": [] },
+    "kp16": { "type": "key", "key": "t", "modifiers": [] },
+    "kp17": { "type": "key", "key": "g", "modifiers": [] },
+    "kp18": { "type": "key", "key": "space", "modifiers": [] },
+    "kp19": { "type": "key", "key": "tab", "modifiers": [] },
+    "kp20": { "type": "key", "key": "grave", "modifiers": [] }
+  },
+  "lighting": {
+    "effect": "static",
+    "brightness": 80,
+    "color": [200, 40, 40]
+  }
+}
