@@ -12,7 +12,8 @@ use opentartarus_core::remap::{Clock, RawEvent, RemapEngine};
 use opentartarus_core::store::read_active_id;
 use opentartarus_core::types::{DeviceModel, MouseButton, ScrollDir};
 use opentartarus_daemon::device::{
-    enumerate_tartarus, grab_conflict_message, pick_first, Detected,
+    detect_status, device_ui_state, enumerate_tartarus, grab_conflict_message, pick_first,
+    scan_interval_ms, snapshot_changed, DetectStatus, Detected, DeviceUiState,
 };
 use opentartarus_daemon::handler::{handle_request, DaemonState};
 use opentartarus_daemon::openrazer::OpenRazerClient;
@@ -142,20 +143,14 @@ async fn run() -> Result<(), ErrorCode> {
     };
 
     let found = pick_first(enumerate_tartarus());
-    let (device_present, model, evdev_ok, grab_conflict, vid, pid) = match &found {
-        Some(detected) => {
-            let evdev_ok = detected.nodes.iter().all(|path| probe_evdev_readable(path));
-            (
-                true,
-                Some(detected.model),
-                evdev_ok,
-                None,
-                Some(detected.vid),
-                Some(detected.pid),
-            )
-        }
-        None => (false, None, true, None, None, None),
-    };
+    let status = detect_status(found.as_ref(), |path| probe_evdev_readable(path));
+    let snapshot = device_ui_state(status, found.as_ref().map(|detected| detected.model), false);
+    let device_present = snapshot.present;
+    let model = snapshot.model;
+    let evdev_ok = snapshot.evdev_ok;
+    let grab_conflict = None;
+    let vid = found.as_ref().map(|detected| detected.vid);
+    let pid = found.as_ref().map(|detected| detected.pid);
 
     let lighting = OpenRazerClient::new(vid, pid);
     let openrazer_available = lighting.available();
@@ -194,8 +189,9 @@ async fn run() -> Result<(), ErrorCode> {
     let mut events_rx = event_tx.subscribe();
     let (tray_tx, mut tray_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let tray_icon = tray::OpenTartarusTray::new(profile_name, tray_tx);
+    let tray_icon = tray::OpenTartarusTray::new(profile_name, tray_tx.clone());
     let tray_handle = spawn_tray(tray_icon).await;
+    let _tray_keep_alive = tray_tx;
 
     {
         let listener_state = Arc::clone(&state);
@@ -232,10 +228,11 @@ async fn run() -> Result<(), ErrorCode> {
         tokio::select! {
             cmd = tray_rx.recv() => {
                 match cmd {
-                    Some(TrayCmd::Quit) | None => {
+                    Some(TrayCmd::Quit) => {
                         request_quit(&state, &event_tx, &quit);
                         break;
                     }
+                    None => {}
                     Some(TrayCmd::Open) => {
                         let connected = clients.load(Ordering::SeqCst) > 0;
                         if ui.ensure_open(connected) {
@@ -336,43 +333,78 @@ fn device_loop(
     let mut grabbed: Vec<evdev::Device> = Vec::new();
     let mut grabbed_ids: Option<(u16, u16, DeviceModel)> = None;
     let mut grabbed_nodes: Vec<PathBuf> = Vec::new();
+    let mut last_ui: Option<DeviceUiState> = None;
 
     while !quit.load(Ordering::SeqCst) {
         poll_record_timeout(&state, &events);
 
         if grabbed.is_empty() {
-            if let Some(detected) = pick_first(enumerate_tartarus()) {
-                match grab_nodes(&detected.nodes) {
-                    Ok(devices) => {
-                        grabbed = devices;
-                        grabbed_ids = Some((detected.vid, detected.pid, detected.model));
-                        grabbed_nodes = detected.nodes.clone();
-                        on_device_appeared(&state, &detected, &events, &epoch);
-                    }
-                    Err((code, os)) => {
-                        log::write(&code.log_line(Some(&os)));
-                        let mut st = state.lock().expect("daemon state");
-                        st.device_present = true;
-                        st.model = Some(detected.model);
-                        st.grab_conflict = None;
-                        if code == ErrorCode::GrabConflict {
-                            st.evdev_ok = true;
-                        } else {
-                            st.evdev_ok = false;
+            let detected = pick_first(enumerate_tartarus());
+            let status = detect_status(detected.as_ref(), |path| probe_evdev_readable(path));
+            match (status, detected) {
+                (DetectStatus::Present, Some(detected)) => {
+                    match grab_nodes(&detected.nodes) {
+                        Ok(devices) => {
+                            grabbed = devices;
+                            grabbed_ids = Some((detected.vid, detected.pid, detected.model));
+                            grabbed_nodes = detected.nodes.clone();
+                            last_ui = Some(device_ui_state(
+                                DetectStatus::Present,
+                                Some(detected.model),
+                                false,
+                            ));
+                            on_device_appeared(&state, &detected, &events, &epoch);
                         }
-                        emit_event(
-                            &events,
-                            EventMethod::Error,
-                            json!({
-                                "code": code.wire_name(),
-                                "message": code.user_message(),
-                            }),
-                        );
-                        emit_event(&events, EventMethod::DeviceChanged, device_event_params(&st));
+                        Err((code, os)) => {
+                            let grab_conflict = code == ErrorCode::GrabConflict;
+                            let next = device_ui_state(
+                                DetectStatus::Present,
+                                Some(detected.model),
+                                grab_conflict,
+                            );
+                            publish_idle_detect(
+                                &state,
+                                &events,
+                                &mut last_ui,
+                                next,
+                                Some(detected.vid),
+                                Some(detected.pid),
+                                Some((code, os)),
+                            );
+                        }
                     }
                 }
+                (DetectStatus::Permission, Some(detected)) => {
+                    let next = device_ui_state(
+                        DetectStatus::Permission,
+                        Some(detected.model),
+                        false,
+                    );
+                    publish_idle_detect(
+                        &state,
+                        &events,
+                        &mut last_ui,
+                        next,
+                        Some(detected.vid),
+                        Some(detected.pid),
+                        Some((ErrorCode::Permission, String::new())),
+                    );
+                }
+                (DetectStatus::Missing, _)
+                | (DetectStatus::Permission, None)
+                | (DetectStatus::Present, None) => {
+                    let next = device_ui_state(DetectStatus::Missing, None, false);
+                    if last_ui.as_ref().is_some_and(|snap| snap.present)
+                        && last_ui
+                            .as_ref()
+                            .is_some_and(|prev| snapshot_changed(prev, &next))
+                    {
+                        on_device_vanished(&state, &events);
+                    }
+                    last_ui = Some(next);
+                }
             }
-            std::thread::sleep(POLL_INTERVAL);
+            std::thread::sleep(Duration::from_millis(scan_interval_ms(false)));
             continue;
         }
 
@@ -380,6 +412,7 @@ fn device_loop(
             grabbed.clear();
             grabbed_ids = None;
             grabbed_nodes.clear();
+            last_ui = Some(device_ui_state(DetectStatus::Missing, None, false));
             on_device_vanished(&state, &events);
             continue;
         }
@@ -409,6 +442,7 @@ fn device_loop(
             grabbed.clear();
             grabbed_ids = None;
             grabbed_nodes.clear();
+            last_ui = Some(device_ui_state(DetectStatus::Missing, None, false));
             on_device_vanished(&state, &events);
             continue;
         }
@@ -455,6 +489,47 @@ fn idle_sleep(state: &Mutex<DaemonState<OpenRazerClient>>) -> Duration {
     } else {
         POLL_INTERVAL
     }
+}
+
+fn publish_idle_detect(
+    state: &Mutex<DaemonState<OpenRazerClient>>,
+    events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
+    last: &mut Option<DeviceUiState>,
+    next: DeviceUiState,
+    vid: Option<u16>,
+    pid: Option<u16>,
+    error: Option<(ErrorCode, String)>,
+) {
+    if last.as_ref().is_some_and(|prev| !snapshot_changed(prev, &next)) {
+        return;
+    }
+    let mut st = state.lock().expect("daemon state");
+    st.device_present = next.present;
+    st.model = next.model;
+    st.evdev_ok = next.evdev_ok;
+    st.grab_conflict = if next.grab_conflict {
+        Some(ErrorCode::GrabConflict.user_message().to_string())
+    } else {
+        None
+    };
+    match (vid, pid) {
+        (Some(vid), Some(pid)) if next.present => update_lighting_usb(&mut st.lighting, Some((vid, pid))),
+        _ => update_lighting_usb(&mut st.lighting, None),
+    }
+    emit_event(events, EventMethod::DeviceChanged, device_event_params(&st));
+    if let Some((code, os)) = error {
+        let os_ref = if os.is_empty() { None } else { Some(os.as_str()) };
+        log::write(&code.log_line(os_ref));
+        emit_event(
+            events,
+            EventMethod::Error,
+            json!({
+                "code": code.wire_name(),
+                "message": code.user_message(),
+            }),
+        );
+    }
+    *last = Some(next);
 }
 
 fn grab_nodes(nodes: &[PathBuf]) -> Result<Vec<evdev::Device>, (ErrorCode, String)> {

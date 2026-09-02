@@ -34,6 +34,10 @@ pub fn tray_name_from_applied_params(params: &Value) -> Option<String> {
         .map(tray_name_from_profile_id)
 }
 
+pub fn tray_cmd_requests_quit(cmd: Option<TrayCmd>) -> bool {
+    matches!(cmd, Some(TrayCmd::Quit))
+}
+
 pub fn tray_menu_labels(_active_name: &str) -> Vec<String> {
     let mut v: Vec<String> = opentartarus_core::pack::SHIPPED_IDS
         .iter()
@@ -161,5 +165,12 @@ mod tests {
             Some("Default")
         );
         assert_eq!(tray_name_from_applied_params(&serde_json::json!({})), None);
+    }
+
+    #[test]
+    fn closed_tray_channel_is_not_quit() {
+        assert!(!tray_cmd_requests_quit(None));
+        assert!(tray_cmd_requests_quit(Some(TrayCmd::Quit)));
+        assert!(!tray_cmd_requests_quit(Some(TrayCmd::Open)));
     }
 }
