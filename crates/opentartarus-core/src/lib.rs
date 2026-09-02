@@ -5,6 +5,7 @@ pub mod ipc;
 pub mod keymap;
 pub mod pack;
 pub mod paths;
+pub mod record;
 pub mod remap;
 pub mod store;
 pub mod types;
