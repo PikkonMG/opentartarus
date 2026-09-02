@@ -17,7 +17,9 @@ use opentartarus_daemon::device::{
 use opentartarus_daemon::handler::{handle_request, DaemonState};
 use opentartarus_daemon::openrazer::OpenRazerClient;
 use opentartarus_daemon::perms::{probe_evdev_readable, probe_uinput};
-use opentartarus_daemon::playback::{remap_physical_event, EngineEpoch};
+use opentartarus_daemon::playback::{
+    commit_if_engine_replaced, remap_physical_event, EngineEpoch,
+};
 use opentartarus_daemon::server::{accept_loop, bind_exclusive, emit_event};
 use opentartarus_daemon::spawn_ui::UiSupervisor;
 use opentartarus_daemon::tray::{
@@ -238,21 +240,28 @@ async fn run() -> Result<(), ErrorCode> {
                         }
                     }
                     Some(TrayCmd::ApplyProfile(id)) => {
-                        {
+                        let applied = {
                             let mut st = state.lock().expect("daemon state");
-                            let _ = handle_request(
+                            let result = handle_request(
                                 &mut st,
                                 Method::ApplyProfile,
                                 json!({ "id": id }),
                                 now_ms(),
                             );
+                            commit_if_engine_replaced(
+                                result.is_ok(),
+                                Some(Method::ApplyProfile),
+                                &epoch,
+                            );
+                            result.is_ok()
+                        };
+                        if applied {
+                            emit_event(
+                                &event_tx,
+                                EventMethod::ProfileApplied,
+                                json!({ "id": id }),
+                            );
                         }
-                        epoch.bump();
-                        emit_event(
-                            &event_tx,
-                            EventMethod::ProfileApplied,
-                            json!({ "id": id }),
-                        );
                     }
                 }
             }
@@ -463,8 +472,8 @@ fn on_device_appeared(
     let active = st.active_id.clone();
     if let Some(id) = active {
         let applied = handle_request(&mut st, Method::ApplyProfile, json!({ "id": id }), now_ms());
+        commit_if_engine_replaced(applied.is_ok(), Some(Method::ApplyProfile), epoch);
         if applied.is_ok() {
-            epoch.bump();
             emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
         }
     }
@@ -529,7 +538,7 @@ fn handle_physical_event<L: LightingClient>(
             if let Some(params) = record_params_from_event(&ev) {
                 match handle_request(&mut st, Method::SubmitRecord, params, now_ms()) {
                     Ok(result) => {
-                        epoch.bump();
+                        commit_if_engine_replaced(true, Some(Method::SubmitRecord), epoch);
                         emit_event(events, EventMethod::Recorded, result);
                         if let Some(id) = st.active_id.as_deref() {
                             emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));

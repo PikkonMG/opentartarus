@@ -1,5 +1,5 @@
 use crate::handler::{handle_request, DaemonState};
-use crate::playback::{method_mutates_engine, EngineEpoch};
+use crate::playback::{commit_if_engine_replaced, EngineEpoch};
 use opentartarus_core::codec::{decode_frame, encode_frame};
 use opentartarus_core::constants::IPC_MAX_MESSAGE_BYTES;
 use opentartarus_core::error::ErrorCode;
@@ -107,11 +107,10 @@ async fn handle_client<L: LightingClient + Send>(
                         let method = request_method(&payload);
                         let out = {
                             let mut st = state.lock().expect("daemon state");
-                            dispatch_json(&mut *st, &payload)
+                            let out = dispatch_json(&mut *st, &payload);
+                            commit_if_engine_replaced(response_ok(&out), method, &epoch);
+                            out
                         };
-                        if method.is_some_and(method_mutates_engine) {
-                            epoch.bump();
-                        }
                         if write_bytes(&mut writer, &out).await.is_err() {
                             break;
                         }
@@ -138,6 +137,13 @@ async fn handle_client<L: LightingClient + Send>(
 fn request_method(bytes: &[u8]) -> Option<Method> {
     let value: Value = serde_json::from_slice(bytes).ok()?;
     parse_request(&value).ok().map(|req| req.method)
+}
+
+fn response_ok(bytes: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(bytes)
+        .ok()
+        .and_then(|value| value.get("ok").and_then(Value::as_bool))
+        .unwrap_or(false)
 }
 
 fn after_request<L: LightingClient>(
