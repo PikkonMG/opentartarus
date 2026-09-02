@@ -99,6 +99,10 @@ impl Recorder {
     pub fn is_active(&self) -> bool {
         self.session.is_some()
     }
+
+    pub fn session(&self) -> Option<RecordSession> {
+        self.session
+    }
 }
 
 #[cfg(test)]
