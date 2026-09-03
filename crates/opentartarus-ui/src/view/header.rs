@@ -55,12 +55,6 @@ fn device_pill(app: &App) -> Element<'_, Message> {
 }
 
 pub fn header_bar(app: &App) -> Element<'_, Message> {
-    let menu_button = button(text(theme::MENU_GLYPH).size(theme::TEXT_TITLE))
-        .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
-        .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
-        .on_press(Message::ToggleMenu)
-        .style(quiet_button);
-
     // The window has no system title bar, so this row is the title bar: the
     // left half drags the window, the right half holds the window controls.
     let grip = mouse_area(
@@ -75,40 +69,71 @@ pub fn header_bar(app: &App) -> Element<'_, Message> {
     )
     .on_press(Message::DragWindow);
 
-    let bar = row![
-        grip,
-        menu_button,
-        window_button(theme::MINIMIZE_GLYPH, Message::MinimizeWindow),
-        window_button(theme::MAXIMIZE_GLYPH, Message::ToggleMaximize),
-        close_button(),
+    // All four controls are the same square, the same glyph size and the same
+    // style, so they read as one row rather than a boxed button beside three
+    // loose glyphs. The menu button only looks different while its menu is
+    // open, which is the one time that difference means something.
+    let controls = row![
+        header_control(
+            theme::MENU_GLYPH,
+            Message::ToggleMenu,
+            if app.menu_open {
+                quiet_button
+            } else {
+                window_control_button
+            },
+        ),
+        header_control(
+            theme::MINIMIZE_GLYPH,
+            Message::MinimizeWindow,
+            window_control_button,
+        ),
+        header_control(
+            theme::MAXIMIZE_GLYPH,
+            Message::ToggleMaximize,
+            window_control_button,
+        ),
+        header_control(
+            theme::CLOSE_GLYPH,
+            Message::CloseWindow,
+            close_control_button,
+        ),
     ]
-    .spacing(theme::SPACE_XS)
+    .spacing(theme::SPACE_XXS)
     .align_y(Alignment::Center);
 
-    container(bar)
-        .width(Length::Fill)
-        .height(Length::Fixed(theme::HEADER_HEIGHT))
-        .padding([0.0, theme::SPACE_MD])
-        .style(surface_container)
-        .into()
+    container(
+        row![grip, controls]
+            .spacing(theme::SPACE_SM)
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fixed(theme::HEADER_HEIGHT))
+    .padding([0.0, theme::SPACE_SM])
+    .style(surface_container)
+    .into()
 }
 
-fn window_button<'a>(glyph: &'a str, message: Message) -> Element<'a, Message> {
-    button(text(glyph).size(theme::TEXT_BODY))
-        .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
-        .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
-        .on_press(message)
-        .style(window_control_button)
-        .into()
-}
-
-fn close_button<'a>() -> Element<'a, Message> {
-    button(text(theme::CLOSE_GLYPH).size(theme::TEXT_TITLE))
-        .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
-        .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
-        .on_press(Message::CloseWindow)
-        .style(close_control_button)
-        .into()
+/// One square title-bar control. Every caller passes the same size, so the
+/// glyphs sit on one optical line however wide or tall they draw.
+fn header_control<'a>(
+    glyph: &'a str,
+    message: Message,
+    style: fn(&Theme, button::Status) -> button::Style,
+) -> Element<'a, Message> {
+    button(
+        container(text(glyph).size(theme::TEXT_HEADING))
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(Alignment::Center)
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
+    .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
+    .padding(0)
+    .on_press(message)
+    .style(style)
+    .into()
 }
 
 /// True while the daemon is up. The header dot and the status dot share it.
