@@ -308,12 +308,20 @@ const ANALOG_PAD_CELLS: [(KeyId, usize, usize); 4] = [
 ];
 
 /// Uniform scale and offset that centre the natural-size cluster in `size`.
+/// How far a drawn key reaches past its own rect: half the selection glow
+/// (a stroke straddles its path) plus the bevel that hangs below. The cluster
+/// is fitted inside a canvas shrunk by this on every side, so an edge key's
+/// glow and bevel land inside the canvas instead of being clipped by it.
+const DRAW_OVERHANG: f32 = SELECTED_GLOW_WIDTH / HALF + theme::CAP_SHADOW_DROP;
+
 fn fit(size: Size) -> (f32, f32, f32) {
-    let scale = (size.width / NATURAL_WIDTH)
-        .min(size.height / NATURAL_HEIGHT)
+    let usable_width = (size.width - DRAW_OVERHANG * HALF).max(0.0);
+    let usable_height = (size.height - DRAW_OVERHANG * HALF).max(0.0);
+    let scale = (usable_width / NATURAL_WIDTH)
+        .min(usable_height / NATURAL_HEIGHT)
         .min(MAX_SCALE);
-    let offset_x = (size.width - NATURAL_WIDTH * scale) / HALF;
-    let offset_y = (size.height - NATURAL_HEIGHT * scale) / HALF;
+    let offset_x = DRAW_OVERHANG + (usable_width - NATURAL_WIDTH * scale) / HALF;
+    let offset_y = DRAW_OVERHANG + (usable_height - NATURAL_HEIGHT * scale) / HALF;
     (scale, offset_x, offset_y)
 }
 
@@ -582,6 +590,37 @@ mod tests {
         let big_key = key_rects(BIG, Some(DeviceModel::V2))[0].1;
         let tight_key = rects[0].1;
         assert!(tight_key.width < big_key.width, "tight bounds must shrink keys");
+    }
+
+    #[test]
+    fn nothing_drawn_around_an_edge_key_is_clipped_by_the_canvas() {
+        // A key's rect is not all of it: the selection glow straddles the
+        // rect's edge and the bevel hangs below. Every one of those has to
+        // stay inside the canvas at every size, or an edge key loses part of
+        // itself. This is the case the user saw: a snug fit put the leftmost
+        // column's outer edge exactly on the canvas boundary.
+        for size in [TIGHT, BIG, Size::new(550.0, 550.0), Size::new(328.0, 304.0)] {
+            for (id, rect) in key_rects(size, Some(DeviceModel::V2)) {
+                let glow = SELECTED_GLOW_WIDTH / HALF;
+                assert!(
+                    rect.x - glow >= -f32::EPSILON,
+                    "{id:?} glow clips the left edge at {size:?}"
+                );
+                assert!(
+                    rect.y - glow >= -f32::EPSILON,
+                    "{id:?} glow clips the top edge at {size:?}"
+                );
+                assert!(
+                    rect.x + rect.width + glow <= size.width + f32::EPSILON,
+                    "{id:?} glow clips the right edge at {size:?}"
+                );
+                assert!(
+                    rect.y + rect.height + glow + theme::CAP_SHADOW_DROP
+                        <= size.height + f32::EPSILON,
+                    "{id:?} bevel clips the bottom edge at {size:?}"
+                );
+            }
+        }
     }
 
     #[test]
