@@ -3,12 +3,8 @@ use crate::theme;
 use iced::widget::{button, container, text, Space};
 use iced::{Background, Border, Color, Element, Length, Theme};
 
-// This module is the shared style vocabulary Tasks 6-9 draw from. Every
-// function below is covered by the tests at the bottom of this file, but
-// `chip_button` has no caller in the application yet: the screen that uses
-// it is built in a later task. `#[allow(dead_code)]` marks exactly that
-// function, so the lint still catches a genuinely unused function added by
-// mistake.
+// This module is the shared style vocabulary the view modules draw from.
+// Every function below is covered by the tests at the bottom of this file.
 
 /// A raised panel: the keypad card, the bind readout, the menu popup.
 pub fn card_container(_theme: &Theme) -> container::Style {
@@ -85,7 +81,6 @@ pub fn quiet_button(_theme: &Theme, status: button::Status) -> button::Style {
 }
 
 /// A small rounded pill, used for the mouse targets.
-#[allow(dead_code)]
 pub fn chip_button(_theme: &Theme, status: button::Status) -> button::Style {
     control(
         theme::COLOR_RAISED,
