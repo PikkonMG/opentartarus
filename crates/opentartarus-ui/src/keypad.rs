@@ -77,7 +77,7 @@ impl Program<Message> for Keypad {
         let opacity = if self.faded {
             theme::DISCONNECTED_OPACITY
         } else {
-            NO_SCALE
+            FULL_OPACITY
         };
         let bound_fill = with_opacity(theme::COLOR_KEY, opacity);
         let unbound_fill = with_opacity(theme::COLOR_KEY_UNBOUND, opacity);
@@ -264,8 +264,13 @@ const THUMB_ROW_HEIGHT: f32 = DPAD_HEIGHT;
 const NATURAL_WIDTH: f32 = TOP_WIDTH;
 const NATURAL_HEIGHT: f32 = GRID_HEIGHT + SECTION_GAP + THUMB_ROW_HEIGHT;
 
-const NO_SCALE: f32 = 1.0;
+const FULL_OPACITY: f32 = 1.0;
 const HALF: f32 = 2.0;
+/// How far the pad may grow past its natural size. The cluster is 328x304 at
+/// scale 1.0, which leaves most of the card empty in the default 1120x760
+/// window, so it scales up to fill the space. The cap stops the keys turning
+/// comically large on a maximised window.
+const MAX_SCALE: f32 = 2.0;
 
 /// The eight thumb-pad directions, by 3x3 cell. The centre cell is absent on
 /// purpose: it is drawn as a label but is not clickable.
@@ -287,7 +292,7 @@ const ANALOG_PAD_CELLS: [(KeyId, usize, usize); 4] = [
 fn fit(size: Size) -> (f32, f32, f32) {
     let scale = (size.width / NATURAL_WIDTH)
         .min(size.height / NATURAL_HEIGHT)
-        .min(NO_SCALE);
+        .min(MAX_SCALE);
     let offset_x = (size.width - NATURAL_WIDTH * scale) / HALF;
     let offset_y = (size.height - NATURAL_HEIGHT * scale) / HALF;
     (scale, offset_x, offset_y)
@@ -558,5 +563,59 @@ mod tests {
         let big_key = key_rects(BIG, Some(DeviceModel::V2))[0].1;
         let tight_key = rects[0].1;
         assert!(tight_key.width < big_key.width, "tight bounds must shrink keys");
+    }
+
+    #[test]
+    fn a_roomy_bounds_grows_the_pad_instead_of_leaving_it_small() {
+        // The centre card in the default 1120x760 window is about this size.
+        let card = Size::new(624.0, 600.0);
+        let (scale, _, _) = fit(card);
+        assert!(
+            scale > 1.0,
+            "the pad must fill a roomy card, not sit at natural size: {scale}"
+        );
+        let natural_key = KEY_WIDTH;
+        let grown = key_rects(card, Some(DeviceModel::V2))[0].1;
+        assert!(
+            grown.width > natural_key,
+            "keys must grow with the card: {} vs {natural_key}",
+            grown.width
+        );
+    }
+
+    #[test]
+    fn growth_stops_at_the_cap_and_stays_centred() {
+        let huge = Size::new(4000.0, 3000.0);
+        let (scale, offset_x, offset_y) = fit(huge);
+        assert_eq!(scale, MAX_SCALE, "growth must stop at the cap");
+        assert!(offset_x > 0.0 && offset_y > 0.0, "capped pad must stay centred");
+        let rects = key_rects(huge, Some(DeviceModel::V2));
+        let left = rects.iter().map(|(_, r)| r.x).fold(f32::MAX, f32::min);
+        let right = rects
+            .iter()
+            .map(|(_, r)| r.x + r.width)
+            .fold(f32::MIN, f32::max);
+        assert!(
+            (left - (huge.width - right)).abs() < 1.0,
+            "left margin {left} must match right margin {}",
+            huge.width - right
+        );
+    }
+
+    #[test]
+    fn scaling_keeps_the_pad_proportions() {
+        // Uniform scale means the width-to-height ratio never changes.
+        let ratio_of = |size: Size| {
+            let rects = key_rects(size, Some(DeviceModel::V2));
+            let key = rects[0].1;
+            key.width / key.height
+        };
+        let natural = KEY_WIDTH / KEY_HEIGHT;
+        for size in [TIGHT, BIG, Size::new(624.0, 600.0), Size::new(4000.0, 300.0)] {
+            assert!(
+                (ratio_of(size) - natural).abs() < 0.01,
+                "keys must stay key-shaped at {size:?}"
+            );
+        }
     }
 }
