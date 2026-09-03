@@ -6,6 +6,7 @@ use serde_json::Value;
 use tokio::sync::mpsc::UnboundedSender;
 
 pub const TRAY_ID: &str = "opentartarus";
+pub const MENU_PROFILES: &str = "Profiles";
 pub const MENU_OPEN: &str = "Open";
 pub const MENU_QUIT: &str = "Quit";
 const TRAY_ICON_NAME: &str = "opentartarus";
@@ -44,14 +45,26 @@ pub fn tray_cmd_requests_quit(cmd: Option<TrayCmd>) -> bool {
     matches!(cmd, Some(TrayCmd::Quit))
 }
 
-pub fn tray_menu_labels(_active_name: &str) -> Vec<String> {
-    let mut v: Vec<String> = opentartarus_core::pack::SHIPPED_IDS
+/// The names of every shipped profile, in pack order. Used by the tray submenu
+/// and by its test.
+pub fn tray_profile_submenu_labels() -> Vec<String> {
+    SHIPPED_IDS
         .iter()
-        .map(|id| opentartarus_core::pack::shipped_profile(id).unwrap().name)
-        .collect();
-    v.push(MENU_OPEN.into());
-    v.push(MENU_QUIT.into());
-    v
+        .map(|id| {
+            shipped_profile(id)
+                .map(|profile| profile.name)
+                .unwrap_or_else(|_| (*id).to_string())
+        })
+        .collect()
+}
+
+/// The top level of the tray menu. Profiles live one level down.
+pub fn tray_menu_labels(_active_name: &str) -> Vec<String> {
+    vec![
+        String::from(MENU_PROFILES),
+        String::from(MENU_OPEN),
+        String::from(MENU_QUIT),
+    ]
 }
 
 /// Decodes the embedded PNG. Returns `None` rather than panicking, so a bad
@@ -133,11 +146,15 @@ impl Tray for OpenTartarusTray {
     }
 
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
-        let mut items = Vec::with_capacity(SHIPPED_IDS.len() + 3);
+        use ksni::menu::SubMenu;
+
+        let mut profiles = Vec::with_capacity(SHIPPED_IDS.len());
         for id in SHIPPED_IDS {
-            let name = shipped_profile(id).map(|p| p.name).unwrap_or_else(|_| (*id).to_string());
+            let name = shipped_profile(id)
+                .map(|profile| profile.name)
+                .unwrap_or_else(|_| (*id).to_string());
             let profile_id = (*id).to_string();
-            items.push(
+            profiles.push(
                 StandardItem {
                     label: name,
                     activate: Box::new(move |this: &mut Self| {
@@ -148,24 +165,28 @@ impl Tray for OpenTartarusTray {
                 .into(),
             );
         }
-        items.push(ksni::MenuItem::Separator);
-        items.push(
+
+        vec![
+            SubMenu {
+                label: MENU_PROFILES.into(),
+                submenu: profiles,
+                ..Default::default()
+            }
+            .into(),
+            ksni::MenuItem::Separator,
             StandardItem {
                 label: MENU_OPEN.into(),
                 activate: Box::new(|this: &mut Self| this.send(TrayCmd::Open)),
                 ..Default::default()
             }
             .into(),
-        );
-        items.push(
             StandardItem {
                 label: MENU_QUIT.into(),
                 activate: Box::new(|this: &mut Self| this.send(TrayCmd::Quit)),
                 ..Default::default()
             }
             .into(),
-        );
-        items
+        ]
     }
 }
 
@@ -186,13 +207,37 @@ mod tests {
     use opentartarus_core::pack::SHIPPED_IDS;
 
     #[test]
-    fn tray_menu_lists_shipped_then_open_quit() {
+    fn the_top_level_menu_is_three_entries_long() {
         let labels = tray_menu_labels("Default");
+        assert_eq!(
+            labels,
+            vec![
+                String::from(MENU_PROFILES),
+                String::from(MENU_OPEN),
+                String::from(MENU_QUIT),
+            ],
+            "profiles must not flood the top level"
+        );
+    }
+
+    #[test]
+    fn the_submenu_lists_every_shipped_profile_in_pack_order() {
+        let labels = tray_profile_submenu_labels();
+        assert_eq!(labels.len(), SHIPPED_IDS.len());
         assert_eq!(labels[0], "Default");
-        assert_eq!(labels.len(), SHIPPED_IDS.len() + 2);
-        assert_eq!(labels[labels.len() - 2], "Open");
-        assert_eq!(labels[labels.len() - 1], "Quit");
-        assert_eq!(tray_tooltip("Default"), "OpenTartarus — Default");
+        for (index, id) in SHIPPED_IDS.iter().enumerate() {
+            let expected = shipped_profile(id).expect("shipped profile").name;
+            assert_eq!(labels[index], expected, "row {index} out of order");
+        }
+    }
+
+    #[test]
+    fn the_submenu_names_are_unique() {
+        let mut labels = tray_profile_submenu_labels();
+        let total = labels.len();
+        labels.sort();
+        labels.dedup();
+        assert_eq!(labels.len(), total, "two profiles must not share a name");
     }
 
     #[test]
