@@ -1,8 +1,6 @@
 use crate::app::{App, Message};
 use crate::theme::{self, PROFILE_LIST_WIDTH};
-use crate::view::widgets::{
-    danger_text_button, quiet_button, selected_row_button, surface_container,
-};
+use crate::view::widgets::{quiet_button, selected_row_button, surface_container};
 use iced::widget::{button, column, container, scrollable, text};
 use iced::{Element, Length};
 
@@ -28,12 +26,8 @@ pub fn profile_list(app: &App) -> Element<'_, Message> {
             );
         }
     }
-    let quit = button(text(theme::BUTTON_QUIT))
-        .width(Length::Fill)
-        .on_press(Message::Quit)
-        .style(danger_text_button);
     container(
-        column![scrollable(list.padding(8)).height(Length::Fill), quit,]
+        column![scrollable(list.padding(8)).height(Length::Fill)]
             .spacing(8)
             .padding(8)
             .height(Length::Fill),

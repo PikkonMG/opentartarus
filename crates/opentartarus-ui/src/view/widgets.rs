@@ -5,15 +5,12 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 
 // This module is the shared style vocabulary Tasks 6-9 draw from. Every
 // function below is covered by the tests at the bottom of this file, but
-// `card_container`, `chip_button`, `row_button`, `section_label`,
-// `hairline_color`, `dot` and `swatch` have no caller in the application
-// yet: the screens that use them (the header, the lighting presets, the
-// profile swatches) are built in later tasks. `#[allow(dead_code)]` marks
-// exactly those functions, so the lint still catches a genuinely unused
-// function added by mistake.
+// `chip_button`, `row_button`, `section_label` and `swatch` have no caller
+// in the application yet: the screens that use them are built in later
+// tasks. `#[allow(dead_code)]` marks exactly those functions, so the lint
+// still catches a genuinely unused function added by mistake.
 
 /// A raised panel: the keypad card, the bind readout, the menu popup.
-#[allow(dead_code)]
 pub fn card_container(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(theme::COLOR_SURFACE)),
@@ -110,7 +107,7 @@ pub fn row_button(_theme: &Theme, status: button::Status) -> button::Style {
         theme::COLOR_TEXT_DIM,
         Color::TRANSPARENT,
         theme::RADIUS_CONTROL,
-        0.0,
+        theme::BORDER_NONE,
         status,
     )
 }
@@ -136,7 +133,7 @@ pub fn danger_text_button(_theme: &Theme, status: button::Status) -> button::Sty
         theme::COLOR_DANGER,
         Color::TRANSPARENT,
         theme::RADIUS_CONTROL,
-        0.0,
+        theme::BORDER_NONE,
         status,
     )
 }
@@ -153,7 +150,6 @@ pub fn section_label<'a>(label: impl Into<String>) -> Element<'a, Message> {
 }
 
 /// The status dot colour: green while the daemon runs, faint otherwise.
-#[allow(dead_code)]
 pub fn hairline_color(status_ok: bool) -> Color {
     if status_ok {
         theme::COLOR_OK
@@ -163,7 +159,6 @@ pub fn hairline_color(status_ok: bool) -> Color {
 }
 
 /// A small filled circle, used in the header pill and the status bar.
-#[allow(dead_code)]
 pub fn dot<'a>(color: Color) -> Element<'a, Message> {
     container(Space::new(
         Length::Fixed(theme::STATUS_DOT_SIZE),
