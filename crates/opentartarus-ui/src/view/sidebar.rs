@@ -1,13 +1,15 @@
 use crate::app::{App, Message, ProfileRow};
 use crate::theme;
 use crate::view::widgets::{
-    danger_text_button, row_button, section_label, selected_row_button, surface_container, swatch,
+    accent_text_button, row_button, section_label, selected_row_button, surface_container, swatch,
 };
 use iced::widget::{button, column, container, row, scrollable, text};
 use iced::{Alignment, Element, Length};
 
 /// Shown when a profile declares no lighting colour, such as `default`.
-pub const FALLBACK_SWATCH: [u8; 3] = [0x6f, 0x6f, 0x80];
+/// Reuses `theme::SWATCH_FALLBACK_RGB` rather than restating its bytes, so
+/// the fallback swatch and `COLOR_TEXT_FAINT` can never drift apart.
+pub const FALLBACK_SWATCH: [u8; 3] = theme::SWATCH_FALLBACK_RGB;
 
 pub fn profile_swatch_color(row: &ProfileRow) -> [u8; 3] {
     row.color.unwrap_or(FALLBACK_SWATCH)
@@ -43,7 +45,7 @@ pub fn profile_list(app: &App) -> Element<'_, Message> {
             list = list.push(
                 button(text(theme::BUTTON_REVERT).size(theme::TEXT_SMALL))
                     .on_press(Message::RevertProfile)
-                    .style(danger_text_button),
+                    .style(accent_text_button),
             );
         }
     }

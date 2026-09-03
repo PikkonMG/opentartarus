@@ -1,4 +1,4 @@
-use crate::app::Message;
+use crate::app::{Message, Tab};
 use crate::theme;
 use iced::widget::{button, container, text, Space};
 use iced::{Background, Border, Color, Element, Length, Theme};
@@ -111,8 +111,24 @@ pub fn row_button(_theme: &Theme, status: button::Status) -> button::Style {
     )
 }
 
-/// The selected sidebar row, and the selected lighting effect card.
+/// The selected sidebar row: an accent tint carries the selection, with no
+/// border in any state (redesign spec, sidebar section).
 pub fn selected_row_button(_theme: &Theme, status: button::Status) -> button::Style {
+    control(
+        theme::COLOR_ACCENT_SOFT,
+        theme::COLOR_ACCENT_SOFT,
+        theme::COLOR_TEXT,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
+/// The selected lighting effect card. Unlike `selected_row_button`, a card
+/// in a grid has no other cue for which effect is active, so this style
+/// keeps a visible accent border to carry that meaning.
+pub fn selected_effect_button(_theme: &Theme, status: button::Status) -> button::Style {
     control(
         theme::COLOR_ACCENT_SOFT,
         theme::COLOR_ACCENT_SOFT,
@@ -130,6 +146,20 @@ pub fn danger_text_button(_theme: &Theme, status: button::Status) -> button::Sty
         Color::TRANSPARENT,
         theme::with_opacity(theme::COLOR_DANGER, theme::ACCENT_SOFT_ALPHA),
         theme::COLOR_DANGER,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
+/// Accent-coloured text with no fill: a recovery action such as reverting a
+/// profile, which should read as "go back," not as destructive.
+pub fn accent_text_button(_theme: &Theme, status: button::Status) -> button::Style {
+    control(
+        Color::TRANSPARENT,
+        theme::with_opacity(theme::COLOR_ACCENT, theme::ACCENT_SOFT_ALPHA),
+        theme::COLOR_ACCENT,
         Color::TRANSPARENT,
         theme::RADIUS_CONTROL,
         theme::BORDER_NONE,
@@ -190,6 +220,71 @@ pub fn swatch<'a>(rgb: [u8; 3], size: f32) -> Element<'a, Message> {
         .into()
 }
 
+const TAB_ORDER: [(Tab, &str); 2] = [
+    (Tab::Keys, theme::TAB_KEYS),
+    (Tab::Lighting, theme::TAB_LIGHTING),
+];
+
+/// Returned as a function so the test can inspect both states without
+/// rendering the strip.
+pub fn tab_button_style(active: bool) -> fn(&Theme, button::Status) -> button::Style {
+    if active {
+        active_tab_button
+    } else {
+        idle_tab_button
+    }
+}
+
+fn active_tab_button(_theme: &Theme, _status: button::Status) -> button::Style {
+    control(
+        theme::COLOR_RAISED,
+        theme::COLOR_RAISED,
+        theme::COLOR_TEXT,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
+        button::Status::Active,
+    )
+}
+
+fn idle_tab_button(_theme: &Theme, status: button::Status) -> button::Style {
+    control(
+        Color::TRANSPARENT,
+        theme::COLOR_RAISED,
+        theme::COLOR_TEXT_DIM,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
+/// The Keys / Lighting switcher shown above the centre panel. Lives here,
+/// not in `keys_tab.rs` or `lighting_tab.rs`, so both tabs render the exact
+/// same strip from one implementation.
+pub fn tab_strip<'a>(active: Tab) -> Element<'a, Message> {
+    let mut strip = iced::widget::row![].spacing(theme::SPACE_XS);
+    for (tab, label) in TAB_ORDER {
+        strip = strip.push(
+            button(text(label).size(theme::TEXT_SMALL))
+                .padding([theme::SPACE_SM, theme::SPACE_LG])
+                .on_press(Message::SelectTab(tab))
+                .style(tab_button_style(tab == active)),
+        );
+    }
+    container(strip.padding(theme::SPACE_XS))
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(theme::COLOR_SURFACE)),
+            border: Border {
+                color: theme::COLOR_LINE,
+                width: theme::BORDER_HAIRLINE,
+                radius: theme::RADIUS_CONTROL.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,10 +292,20 @@ mod tests {
 
     // Excludes `primary_button`: it is deliberately accent-filled, and its
     // border is set to the same accent colour as its own fill (see
-    // `primary_button` above), so it draws no visible outline. Every other
-    // control here must never carry an accent-coloured border at rest.
-    fn styles() -> [fn(&Theme, button::Status) -> button::Style; 4] {
-        [quiet_button, chip_button, row_button, danger_text_button]
+    // `primary_button` above), so it draws no visible outline. Also
+    // excludes `selected_row_button` and `selected_effect_button`: both
+    // mark a selected state with accent colour by design (a soft fill for
+    // the row, an accent border for the effect card) — each has its own
+    // dedicated test below. Every other control here must never carry an
+    // accent-coloured border at rest.
+    fn styles() -> [fn(&Theme, button::Status) -> button::Style; 5] {
+        [
+            quiet_button,
+            chip_button,
+            row_button,
+            danger_text_button,
+            accent_text_button,
+        ]
     }
 
     #[test]
@@ -211,10 +316,28 @@ mod tests {
             selected.background,
             Some(Background::Color(theme::COLOR_ACCENT_SOFT))
         );
+        assert_eq!(
+            selected.border.width,
+            theme::BORDER_NONE,
+            "no border in any state"
+        );
+        assert_eq!(selected.border.color, Color::TRANSPARENT);
         let plain = row_button(&theme, button::Status::Active);
         assert_eq!(
             plain.background,
             Some(Background::Color(Color::TRANSPARENT))
+        );
+    }
+
+    #[test]
+    fn the_selected_effect_card_draws_a_visible_accent_border() {
+        let theme = theme::theme();
+        let selected = selected_effect_button(&theme, button::Status::Active);
+        assert_eq!(selected.border.color, theme::COLOR_ACCENT);
+        assert_eq!(selected.border.width, theme::BORDER_SELECTED);
+        assert_eq!(
+            selected.background,
+            Some(Background::Color(theme::COLOR_ACCENT_SOFT))
         );
     }
 
@@ -251,7 +374,13 @@ mod tests {
             primary_button(&theme, button::Status::Active).background,
             Some(Background::Color(theme::COLOR_ACCENT))
         );
-        for style in [quiet_button, chip_button, row_button, danger_text_button] {
+        for style in [
+            quiet_button,
+            chip_button,
+            row_button,
+            danger_text_button,
+            accent_text_button,
+        ] {
             assert_ne!(
                 style(&theme, button::Status::Active).background,
                 Some(Background::Color(theme::COLOR_ACCENT))
@@ -268,6 +397,19 @@ mod tests {
             style.background,
             Some(Background::Color(Color::TRANSPARENT))
         );
+    }
+
+    #[test]
+    fn revert_text_is_accent_coloured_unfilled_and_borderless() {
+        let theme = theme::theme();
+        let style = accent_text_button(&theme, button::Status::Active);
+        assert_eq!(style.text_color, theme::COLOR_ACCENT);
+        assert_eq!(
+            style.background,
+            Some(Background::Color(Color::TRANSPARENT))
+        );
+        assert_eq!(style.border.width, theme::BORDER_NONE);
+        assert_eq!(style.border.color, Color::TRANSPARENT);
     }
 
     #[test]
@@ -293,5 +435,16 @@ mod tests {
     fn the_status_dot_is_green_when_running_and_faint_otherwise() {
         assert_eq!(hairline_color(true), theme::COLOR_OK);
         assert_eq!(hairline_color(false), theme::COLOR_TEXT_FAINT);
+    }
+
+    #[test]
+    fn the_tab_strip_marks_exactly_one_tab_active() {
+        let theme = theme::theme();
+        let active = tab_button_style(true)(&theme, button::Status::Active);
+        let idle = tab_button_style(false)(&theme, button::Status::Active);
+        assert_eq!(active.background, Some(Background::Color(theme::COLOR_RAISED)));
+        assert_eq!(idle.background, Some(Background::Color(Color::TRANSPARENT)));
+        assert_eq!(active.text_color, theme::COLOR_TEXT);
+        assert_eq!(idle.text_color, theme::COLOR_TEXT_DIM);
     }
 }

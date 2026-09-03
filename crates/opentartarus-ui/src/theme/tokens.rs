@@ -39,7 +39,17 @@ pub const COLOR_LINE_STRONG: Color = rgba(0xff, 0xff, 0xff, LINE_STRONG_ALPHA);
 // Text, brightest to faintest.
 pub const COLOR_TEXT: Color = rgb(0xe8, 0xe8, 0xee);
 pub const COLOR_TEXT_DIM: Color = rgb(0x9b, 0x9b, 0xaa);
-pub const COLOR_TEXT_FAINT: Color = rgb(0x6f, 0x6f, 0x80);
+/// The byte form of `COLOR_TEXT_FAINT`, for callers that build a `Color`
+/// from `[u8; 3]` at the point of use (the sidebar's profile-swatch
+/// fallback). Declared first so `COLOR_TEXT_FAINT` derives from it below:
+/// one source of truth for the colour, not two literals kept in sync by
+/// hand.
+pub const SWATCH_FALLBACK_RGB: [u8; 3] = [0x6f, 0x6f, 0x80];
+pub const COLOR_TEXT_FAINT: Color = rgb(
+    SWATCH_FALLBACK_RGB[0],
+    SWATCH_FALLBACK_RGB[1],
+    SWATCH_FALLBACK_RGB[2],
+);
 
 // Meaning.
 pub const COLOR_ACCENT: Color = rgb(0x35, 0x84, 0xe4);
