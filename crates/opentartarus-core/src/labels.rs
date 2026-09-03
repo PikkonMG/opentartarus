@@ -1,5 +1,103 @@
 use crate::pack::SHIPPED_IDS;
-use crate::types::{Action, KeyToken, Modifier, MouseButton, MouseTarget, ScrollDir};
+use crate::types::{Action, KeyId, KeyToken, Modifier, MouseButton, MouseTarget, ScrollDir};
+
+/// The four rows on the face of the pad. `kp20` is not here: it is the thumb
+/// key, which sits below the rows on the physical device.
+const GRID_ROW_LENGTHS: [usize; 4] = [5, 5, 5, 4];
+const GRID_ROW_KEYS: [KeyId; 19] = [
+    KeyId::Kp01,
+    KeyId::Kp02,
+    KeyId::Kp03,
+    KeyId::Kp04,
+    KeyId::Kp05,
+    KeyId::Kp06,
+    KeyId::Kp07,
+    KeyId::Kp08,
+    KeyId::Kp09,
+    KeyId::Kp10,
+    KeyId::Kp11,
+    KeyId::Kp12,
+    KeyId::Kp13,
+    KeyId::Kp14,
+    KeyId::Kp15,
+    KeyId::Kp16,
+    KeyId::Kp17,
+    KeyId::Kp18,
+    KeyId::Kp19,
+];
+
+const POSITION_THUMB_KEY: &str = "thumb key";
+const POSITION_THUMB_PAD: &str = "thumb pad";
+const POSITION_ANALOG: &str = "analog stick";
+const POSITION_WHEEL: &str = "wheel";
+const POSITION_WHEEL_COLUMN: &str = "wheel column";
+
+/// The name shown as the inspector heading, for example `Key 07` or
+/// `Thumb north`.
+pub fn key_display_name(id: KeyId) -> String {
+    match id {
+        KeyId::Kp01 => String::from("Key 01"),
+        KeyId::Kp02 => String::from("Key 02"),
+        KeyId::Kp03 => String::from("Key 03"),
+        KeyId::Kp04 => String::from("Key 04"),
+        KeyId::Kp05 => String::from("Key 05"),
+        KeyId::Kp06 => String::from("Key 06"),
+        KeyId::Kp07 => String::from("Key 07"),
+        KeyId::Kp08 => String::from("Key 08"),
+        KeyId::Kp09 => String::from("Key 09"),
+        KeyId::Kp10 => String::from("Key 10"),
+        KeyId::Kp11 => String::from("Key 11"),
+        KeyId::Kp12 => String::from("Key 12"),
+        KeyId::Kp13 => String::from("Key 13"),
+        KeyId::Kp14 => String::from("Key 14"),
+        KeyId::Kp15 => String::from("Key 15"),
+        KeyId::Kp16 => String::from("Key 16"),
+        KeyId::Kp17 => String::from("Key 17"),
+        KeyId::Kp18 => String::from("Key 18"),
+        KeyId::Kp19 => String::from("Key 19"),
+        KeyId::Kp20 => String::from("Key 20"),
+        KeyId::WheelUp => String::from("Wheel up"),
+        KeyId::WheelDown => String::from("Wheel down"),
+        KeyId::WheelClick => String::from("Wheel click"),
+        KeyId::Mode => String::from("Mode"),
+        KeyId::ThumbN => String::from("Thumb north"),
+        KeyId::ThumbNe => String::from("Thumb north-east"),
+        KeyId::ThumbE => String::from("Thumb east"),
+        KeyId::ThumbSe => String::from("Thumb south-east"),
+        KeyId::ThumbS => String::from("Thumb south"),
+        KeyId::ThumbSw => String::from("Thumb south-west"),
+        KeyId::ThumbW => String::from("Thumb west"),
+        KeyId::ThumbNw => String::from("Thumb north-west"),
+        KeyId::AnalogUp => String::from("Analog up"),
+        KeyId::AnalogDown => String::from("Analog down"),
+        KeyId::AnalogLeft => String::from("Analog left"),
+        KeyId::AnalogRight => String::from("Analog right"),
+    }
+}
+
+/// Where the key sits on the device, shown under the inspector heading.
+pub fn key_position_text(id: KeyId) -> String {
+    if id == KeyId::Kp20 {
+        return String::from(POSITION_THUMB_KEY);
+    }
+    if let Some(index) = GRID_ROW_KEYS.iter().position(|candidate| *candidate == id) {
+        let mut remaining = index;
+        for (row, length) in GRID_ROW_LENGTHS.iter().enumerate() {
+            if remaining < *length {
+                return format!("row {} · key {}", row + 1, remaining + 1);
+            }
+            remaining -= *length;
+        }
+    }
+    match id {
+        KeyId::WheelUp | KeyId::WheelDown | KeyId::WheelClick => String::from(POSITION_WHEEL),
+        KeyId::Mode => String::from(POSITION_WHEEL_COLUMN),
+        KeyId::AnalogUp | KeyId::AnalogDown | KeyId::AnalogLeft | KeyId::AnalogRight => {
+            String::from(POSITION_ANALOG)
+        }
+        _ => String::from(POSITION_THUMB_PAD),
+    }
+}
 
 pub fn bind_label(action: Option<&Action>) -> String {
     match action {
@@ -181,5 +279,65 @@ mod tests {
             vec!["default", "league-of-legends", "path-of-exile"]
         );
         assert_eq!(SHIPPED_IDS[0], "default");
+    }
+
+    #[test]
+    fn grid_keys_are_named_and_placed_by_row() {
+        assert_eq!(key_display_name(KeyId::Kp01), "Key 01");
+        assert_eq!(key_position_text(KeyId::Kp01), "row 1 · key 1");
+        assert_eq!(key_display_name(KeyId::Kp07), "Key 07");
+        assert_eq!(key_position_text(KeyId::Kp07), "row 2 · key 2");
+        assert_eq!(key_display_name(KeyId::Kp15), "Key 15");
+        assert_eq!(key_position_text(KeyId::Kp15), "row 3 · key 5");
+        assert_eq!(key_display_name(KeyId::Kp19), "Key 19");
+        assert_eq!(key_position_text(KeyId::Kp19), "row 4 · key 4");
+    }
+
+    #[test]
+    fn thumb_key_is_named_as_the_thumb_key_not_row_five() {
+        assert_eq!(key_display_name(KeyId::Kp20), "Key 20");
+        assert_eq!(key_position_text(KeyId::Kp20), "thumb key");
+    }
+
+    #[test]
+    fn wheel_and_mode_have_their_own_names() {
+        assert_eq!(key_display_name(KeyId::WheelUp), "Wheel up");
+        assert_eq!(key_display_name(KeyId::WheelDown), "Wheel down");
+        assert_eq!(key_display_name(KeyId::WheelClick), "Wheel click");
+        assert_eq!(key_display_name(KeyId::Mode), "Mode");
+        assert_eq!(key_position_text(KeyId::WheelUp), "wheel");
+        assert_eq!(key_position_text(KeyId::Mode), "wheel column");
+    }
+
+    #[test]
+    fn thumb_directions_and_analog_are_distinguishable() {
+        assert_eq!(key_display_name(KeyId::ThumbN), "Thumb north");
+        assert_eq!(key_display_name(KeyId::ThumbSw), "Thumb south-west");
+        assert_eq!(key_position_text(KeyId::ThumbN), "thumb pad");
+        assert_eq!(key_display_name(KeyId::AnalogLeft), "Analog left");
+        assert_eq!(key_position_text(KeyId::AnalogLeft), "analog stick");
+    }
+
+    #[test]
+    fn every_key_id_has_a_unique_name_and_a_position() {
+        let mut names = Vec::with_capacity(KeyId::ALL.len());
+        for id in KeyId::ALL {
+            let name = key_display_name(id);
+            assert!(!name.is_empty(), "name for {id:?}");
+            assert!(!key_position_text(id).is_empty(), "position for {id:?}");
+            names.push(name);
+        }
+        let total = names.len();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), total, "two keys must not share a display name");
+    }
+
+    #[test]
+    fn the_row_tables_agree_with_the_twenty_face_keys() {
+        assert_eq!(GRID_ROW_LENGTHS.iter().sum::<usize>(), GRID_ROW_KEYS.len());
+        assert!(!GRID_ROW_KEYS.contains(&KeyId::Kp20), "kp20 is the thumb key");
+        let face_keys = GRID_ROW_KEYS.len() + 1;
+        assert_eq!(face_keys, 20, "the pad has twenty numbered keys");
     }
 }

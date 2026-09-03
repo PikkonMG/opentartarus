@@ -85,6 +85,48 @@ pub enum KeyId {
 }
 
 impl KeyId {
+    /// Every physical key, in declaration order.
+    /// 20 grid keys + 3 wheel + mode + 8 thumb directions + 4 analog = 36.
+    /// Used by exhaustive tests and by the keypad widget's geometry check.
+    pub const ALL: [KeyId; 36] = [
+        KeyId::Kp01,
+        KeyId::Kp02,
+        KeyId::Kp03,
+        KeyId::Kp04,
+        KeyId::Kp05,
+        KeyId::Kp06,
+        KeyId::Kp07,
+        KeyId::Kp08,
+        KeyId::Kp09,
+        KeyId::Kp10,
+        KeyId::Kp11,
+        KeyId::Kp12,
+        KeyId::Kp13,
+        KeyId::Kp14,
+        KeyId::Kp15,
+        KeyId::Kp16,
+        KeyId::Kp17,
+        KeyId::Kp18,
+        KeyId::Kp19,
+        KeyId::Kp20,
+        KeyId::WheelUp,
+        KeyId::WheelDown,
+        KeyId::WheelClick,
+        KeyId::Mode,
+        KeyId::ThumbN,
+        KeyId::ThumbNe,
+        KeyId::ThumbE,
+        KeyId::ThumbSe,
+        KeyId::ThumbS,
+        KeyId::ThumbSw,
+        KeyId::ThumbW,
+        KeyId::ThumbNw,
+        KeyId::AnalogUp,
+        KeyId::AnalogDown,
+        KeyId::AnalogLeft,
+        KeyId::AnalogRight,
+    ];
+
     pub fn is_analog(self) -> bool {
         matches!(
             self,
