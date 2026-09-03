@@ -2,8 +2,8 @@ use crate::app::{uses_color, App, Banner, Message, LIGHTING_EFFECTS};
 use crate::keypad::{self, Keypad};
 use crate::keys::COMBO_INPUT_ID;
 use crate::theme::{
-    self, BIND_PANEL_WIDTH, COLOR_ACCENT, COLOR_BACKGROUND, COLOR_DANGER, COLOR_SURFACE,
-    COLOR_TEXT, LIGHTING_STRIP_HEIGHT, PROFILE_LIST_WIDTH,
+    self, COLOR_ACCENT, COLOR_BACKGROUND, COLOR_DANGER, COLOR_SURFACE, COLOR_TEXT,
+    INSPECTOR_WIDTH, PROFILE_LIST_WIDTH,
 };
 use iced::widget::{
     button, checkbox, column, container, pick_list, row, scrollable, slider, text, text_input,
@@ -245,7 +245,7 @@ fn bind_panel(app: &App) -> Element<'_, Message> {
         scrollable(col).into()
     };
     container(content)
-        .width(Length::Fixed(BIND_PANEL_WIDTH))
+        .width(Length::Fixed(INSPECTOR_WIDTH))
         .height(Length::Fill)
         .style(surface_container)
         .into()
@@ -306,7 +306,7 @@ fn lighting_strip(app: &App) -> Element<'_, Message> {
     }
     container(row.padding([0, 10]))
         .width(Length::Fill)
-        .height(Length::Fixed(LIGHTING_STRIP_HEIGHT))
+        .height(Length::Shrink)
         .style(surface_container)
         .into()
 }
