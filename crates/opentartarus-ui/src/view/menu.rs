@@ -6,11 +6,16 @@ use iced::{Alignment, Element, Length, Theme};
 
 /// One row of the header menu. Kept as data so the choice is testable without
 /// rendering anything.
+/// The app menu holds only what the title bar cannot.
+///
+/// Minimize, maximize and close are buttons in the header, three pixels away;
+/// repeating them here made the menu read as a duplicate of its own neighbour.
+/// What is left is the pair that has nowhere else to live: repairing a broken
+/// install, and quitting for real. Closing the window hides it to the tray and
+/// the remaps keep running, so Quit is a genuinely different action, not a
+/// louder Close.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuEntry {
-    Minimize,
-    Maximize,
-    Close,
     FixPermissions,
     Quit,
 }
@@ -18,19 +23,22 @@ pub enum MenuEntry {
 impl MenuEntry {
     pub fn label(self) -> &'static str {
         match self {
-            MenuEntry::Minimize => theme::MENU_MINIMIZE,
-            MenuEntry::Maximize => theme::MENU_MAXIMIZE,
-            MenuEntry::Close => theme::MENU_CLOSE,
             MenuEntry::FixPermissions => theme::BUTTON_FIX_PERMISSIONS,
             MenuEntry::Quit => theme::BUTTON_QUIT,
         }
     }
 
+    /// What the entry does, spelled out, because "Quit" alone does not say
+    /// that it also stops the background service.
+    pub fn detail(self) -> &'static str {
+        match self {
+            MenuEntry::FixPermissions => theme::MENU_FIX_DETAIL,
+            MenuEntry::Quit => theme::MENU_QUIT_DETAIL,
+        }
+    }
+
     pub fn message(self) -> Message {
         match self {
-            MenuEntry::Minimize => Message::MinimizeWindow,
-            MenuEntry::Maximize => Message::ToggleMaximize,
-            MenuEntry::Close => Message::CloseWindow,
             MenuEntry::FixPermissions => Message::FixPermissions,
             MenuEntry::Quit => Message::Quit,
         }
@@ -45,11 +53,7 @@ impl MenuEntry {
 /// Repair is offered only while the permission banner is showing, so the menu
 /// never advertises a fix for a problem the user does not have.
 pub fn menu_entries(app: &App) -> Vec<MenuEntry> {
-    let mut entries = vec![
-        MenuEntry::Minimize,
-        MenuEntry::Maximize,
-        MenuEntry::Close,
-    ];
+    let mut entries = Vec::new();
     if matches!(app.banner(), Some(Banner::Permission)) {
         entries.push(MenuEntry::FixPermissions);
     }
@@ -58,18 +62,34 @@ pub fn menu_entries(app: &App) -> Vec<MenuEntry> {
 }
 
 pub fn menu_popup(app: &App) -> Element<'_, Message> {
-    let mut items = column![].spacing(theme::SPACE_XS);
+    let mut items = column![].spacing(theme::SPACE_XXS);
     for entry in menu_entries(app) {
         let style = if entry.is_destructive() {
             danger_text_button
         } else {
             quiet_button
         };
+        let label_color = if entry.is_destructive() {
+            theme::COLOR_DANGER
+        } else {
+            theme::COLOR_TEXT
+        };
         items = items.push(
-            button(text(entry.label()).size(theme::TEXT_BODY))
-                .width(Length::Fill)
-                .on_press(entry.message())
-                .style(style),
+            button(
+                column![
+                    text(entry.label())
+                        .size(theme::TEXT_BODY)
+                        .color(label_color),
+                    text(entry.detail())
+                        .size(theme::TEXT_SMALL)
+                        .color(theme::COLOR_TEXT_FAINT),
+                ]
+                .spacing(theme::SPACE_XXS),
+            )
+            .width(Length::Fill)
+            .padding([theme::SPACE_SM, theme::SPACE_MD])
+            .on_press(entry.message())
+            .style(style),
         );
     }
     let popup = container(items.padding(theme::SPACE_SM))
@@ -95,10 +115,9 @@ mod tests {
     use super::*;
     use crate::app::{App, Banner, Phase};
 
-    // Built with struct-update syntax rather than `let mut app =
-    // App::default(); app.phase = ...` — clippy's `field_reassign_with_default`
-    // flags that shape (it already does at app.rs's own `running` helper, kept
-    // as-is there since fixing it is outside this task).
+    // Struct-update syntax, not `App::default()` then field assignment, which
+    // trips clippy::field_reassign_with_default and would break the warning
+    // budget this repo holds at 22.
     fn running() -> App {
         App {
             phase: Phase::Running,
@@ -108,17 +127,29 @@ mod tests {
         }
     }
 
-    /// The window controls the menu always offers, in order.
-    const WINDOW_ENTRIES: [MenuEntry; 3] =
-        [MenuEntry::Minimize, MenuEntry::Maximize, MenuEntry::Close];
+    #[test]
+    fn the_menu_never_repeats_a_window_control() {
+        // Minimize, maximize and close are buttons in the header. Repeating
+        // them here is what made the menu read as a duplicate of its
+        // neighbour, so no entry may map to a window-control message.
+        let mut app = running();
+        app.evdev_ok = false;
+        for entry in menu_entries(&app) {
+            assert!(
+                !matches!(
+                    entry.message(),
+                    Message::MinimizeWindow | Message::ToggleMaximize | Message::CloseWindow
+                ),
+                "{entry:?} duplicates a title-bar button"
+            );
+        }
+    }
 
     #[test]
-    fn a_healthy_session_offers_window_controls_then_quit() {
+    fn a_healthy_session_offers_only_quit() {
         let app = running();
         assert_eq!(app.banner(), None);
-        let mut expected = WINDOW_ENTRIES.to_vec();
-        expected.push(MenuEntry::Quit);
-        assert_eq!(menu_entries(&app), expected);
+        assert_eq!(menu_entries(&app), vec![MenuEntry::Quit]);
     }
 
     #[test]
@@ -126,10 +157,10 @@ mod tests {
         let mut app = running();
         app.evdev_ok = false;
         assert_eq!(app.banner(), Some(Banner::Permission));
-        let mut expected = WINDOW_ENTRIES.to_vec();
-        expected.push(MenuEntry::FixPermissions);
-        expected.push(MenuEntry::Quit);
-        assert_eq!(menu_entries(&app), expected);
+        assert_eq!(
+            menu_entries(&app),
+            vec![MenuEntry::FixPermissions, MenuEntry::Quit]
+        );
     }
 
     #[test]
@@ -138,32 +169,7 @@ mod tests {
         app.device_present = false;
         app.ever_present = false;
         assert_eq!(app.banner(), Some(Banner::NoDevice));
-        assert!(!menu_entries(&app).contains(&MenuEntry::FixPermissions));
-    }
-
-    #[test]
-    fn window_controls_are_always_offered_and_come_first() {
-        let mut app = running();
-        assert_eq!(&menu_entries(&app)[..WINDOW_ENTRIES.len()], &WINDOW_ENTRIES);
-        app.evdev_ok = false;
-        assert_eq!(&menu_entries(&app)[..WINDOW_ENTRIES.len()], &WINDOW_ENTRIES);
-    }
-
-    #[test]
-    fn only_quit_is_destructive() {
-        // Quit stops the daemon; closing the window does not.
-        for entry in WINDOW_ENTRIES {
-            assert!(!entry.is_destructive(), "{entry:?} must not read as danger");
-        }
-        assert!(!MenuEntry::FixPermissions.is_destructive());
-        assert!(MenuEntry::Quit.is_destructive());
-    }
-
-    #[test]
-    fn closing_the_window_is_not_quitting_the_app() {
-        assert!(matches!(MenuEntry::Close.message(), Message::CloseWindow));
-        assert!(matches!(MenuEntry::Quit.message(), Message::Quit));
-        assert_ne!(MenuEntry::Close.label(), MenuEntry::Quit.label());
+        assert_eq!(menu_entries(&app), vec![MenuEntry::Quit]);
     }
 
     #[test]
@@ -175,39 +181,39 @@ mod tests {
     }
 
     #[test]
-    fn each_entry_carries_its_own_label_and_message() {
+    fn only_quit_is_destructive() {
+        assert!(MenuEntry::Quit.is_destructive());
+        assert!(!MenuEntry::FixPermissions.is_destructive());
+    }
+
+    #[test]
+    fn every_entry_says_what_it_does() {
+        // "Quit" alone does not tell a user it also stops the remapping that
+        // keeps working after the window closes.
+        for entry in [MenuEntry::FixPermissions, MenuEntry::Quit] {
+            assert!(!entry.label().is_empty(), "{entry:?} needs a label");
+            let detail = entry.detail();
+            assert!(!detail.is_empty(), "{entry:?} needs a detail line");
+            assert_ne!(detail, entry.label(), "{entry:?} detail repeats its label");
+        }
         assert_eq!(MenuEntry::Quit.label(), theme::BUTTON_QUIT);
         assert_eq!(
             MenuEntry::FixPermissions.label(),
             theme::BUTTON_FIX_PERMISSIONS
         );
-        assert_eq!(MenuEntry::Minimize.label(), theme::MENU_MINIMIZE);
-        assert_eq!(MenuEntry::Maximize.label(), theme::MENU_MAXIMIZE);
-        assert_eq!(MenuEntry::Close.label(), theme::MENU_CLOSE);
-
         assert!(matches!(MenuEntry::Quit.message(), Message::Quit));
         assert!(matches!(
             MenuEntry::FixPermissions.message(),
             Message::FixPermissions
         ));
-        assert!(matches!(
-            MenuEntry::Minimize.message(),
-            Message::MinimizeWindow
-        ));
-        assert!(matches!(
-            MenuEntry::Maximize.message(),
-            Message::ToggleMaximize
-        ));
+    }
 
-        // No two entries may share a label, or the menu reads as a duplicate.
-        let mut labels: Vec<&str> = menu_entries(&{
-            let mut app = running();
-            app.evdev_ok = false;
-            app
-        })
-        .into_iter()
-        .map(MenuEntry::label)
-        .collect();
+    #[test]
+    fn entries_are_distinct() {
+        let mut app = running();
+        app.evdev_ok = false;
+        let entries = menu_entries(&app);
+        let mut labels: Vec<&str> = entries.iter().copied().map(MenuEntry::label).collect();
         let total = labels.len();
         labels.sort_unstable();
         labels.dedup();

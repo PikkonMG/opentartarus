@@ -198,9 +198,37 @@ pub fn accent_text_button(_theme: &Theme, status: button::Status) -> button::Sty
     )
 }
 
-/// A title-bar control: minimize and maximize. Transparent until hovered, so
-/// the header reads as one surface rather than a row of buttons.
+/// A title-bar control: a filled circle, the way this desktop draws its own
+/// window buttons. Minimize and maximize.
 pub fn window_control_button(_theme: &Theme, status: button::Status) -> button::Style {
+    control(
+        theme::COLOR_RAISED,
+        theme::COLOR_KEY_HOVER,
+        theme::COLOR_TEXT_DIM,
+        Color::TRANSPARENT,
+        theme::RADIUS_PILL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
+/// The close control. Same circle as its neighbours, red on hover, which is
+/// the one place in the row a colour change carries meaning.
+pub fn close_control_button(_theme: &Theme, status: button::Status) -> button::Style {
+    control(
+        theme::COLOR_RAISED,
+        theme::COLOR_DANGER,
+        theme::COLOR_TEXT_DIM,
+        Color::TRANSPARENT,
+        theme::RADIUS_PILL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
+/// The app menu's own button: a rounded square, not a circle, because circles
+/// in this header mean "window control". Quiet until hovered.
+pub fn app_menu_button(_theme: &Theme, status: button::Status) -> button::Style {
     control(
         Color::TRANSPARENT,
         theme::COLOR_RAISED,
@@ -212,26 +240,14 @@ pub fn window_control_button(_theme: &Theme, status: button::Status) -> button::
     )
 }
 
-/// The title bar's close control. Same shape as its neighbours, but it turns
-/// red on hover, the way a close button is expected to.
-pub fn close_control_button(_theme: &Theme, status: button::Status) -> button::Style {
-    let hovered = matches!(
-        status,
-        button::Status::Hovered | button::Status::Pressed
-    );
-    control(
-        Color::TRANSPARENT,
-        theme::COLOR_DANGER,
-        if hovered {
-            Color::WHITE
-        } else {
-            theme::COLOR_TEXT_DIM
-        },
-        Color::TRANSPARENT,
-        theme::RADIUS_CONTROL,
-        theme::BORDER_NONE,
-        status,
-    )
+/// The glyph colour for a window control, given whether the pointer is on it.
+/// The close control goes white on its red hover; the others just brighten.
+pub fn window_glyph_color(hovered: bool, is_close: bool) -> Color {
+    match (hovered, is_close) {
+        (true, true) => Color::WHITE,
+        (true, false) => theme::COLOR_TEXT,
+        (false, _) => theme::COLOR_TEXT_DIM,
+    }
 }
 
 /// The small uppercase label above a group of controls.

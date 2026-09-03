@@ -7,6 +7,7 @@ mod menu;
 mod sidebar;
 mod status;
 mod widgets;
+pub(crate) mod window_icon;
 
 use crate::app::{App, Message};
 use crate::theme;

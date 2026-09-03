@@ -1,9 +1,10 @@
 use crate::app::{App, Message, Phase};
 use crate::theme;
 use crate::view::widgets::{
-    close_control_button, dot, hairline_color, header_container, quiet_button,
-    window_control_button,
+    app_menu_button, close_control_button, dot, hairline_color, header_container,
+    quiet_button, window_control_button, window_glyph_color,
 };
+use crate::view::window_icon::{self, WindowGlyph};
 use iced::widget::{button, container, mouse_area, row, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
 
@@ -77,60 +78,23 @@ pub fn header_bar(app: &App) -> Element<'_, Message> {
     )
     .on_press(Message::DragWindow);
 
-    // All four controls are the same square, the same glyph size and the same
-    // style, so they read as one row rather than a boxed button beside three
-    // loose glyphs. The menu button only looks different while its menu is
-    // open, which is the one time that difference means something.
+    // Three circles, matching how this desktop draws its own window buttons.
+    // The app menu sits apart from them, with a gap, because it is not a
+    // window control and must not read as a fourth one.
     let controls = row![
-        header_control(
-            theme::MENU_GLYPH,
-            Message::ToggleMenu,
-            if app.menu_open {
-                quiet_button
-            } else {
-                window_control_button
-            },
-        ),
-        header_control(
-            theme::MINIMIZE_GLYPH,
-            Message::MinimizeWindow,
-            window_control_button,
-        ),
-        header_control(
-            theme::MAXIMIZE_GLYPH,
-            Message::ToggleMaximize,
-            window_control_button,
-        ),
-        header_control(
-            theme::CLOSE_GLYPH,
-            Message::CloseWindow,
-            close_control_button,
-        ),
+        window_control(WindowGlyph::ChevronDown, Message::MinimizeWindow, false),
+        window_control(WindowGlyph::ChevronUp, Message::ToggleMaximize, false),
+        window_control(WindowGlyph::Cross, Message::CloseWindow, true),
     ]
-    .spacing(theme::SPACE_XXS)
+    .spacing(theme::SPACE_SM)
     .align_y(Alignment::Center);
 
-    container(
-        row![grip, controls]
-            .spacing(theme::SPACE_SM)
-            .align_y(Alignment::Center),
-    )
-    .width(Length::Fill)
-    .height(Length::Fixed(theme::HEADER_HEIGHT))
-    .padding([0.0, theme::SPACE_SM])
-    .style(header_container)
-    .into()
-}
-
-/// One square title-bar control. Every caller passes the same size, so the
-/// glyphs sit on one optical line however wide or tall they draw.
-fn header_control<'a>(
-    glyph: &'a str,
-    message: Message,
-    style: fn(&Theme, button::Status) -> button::Style,
-) -> Element<'a, Message> {
-    button(
-        container(text(glyph).size(theme::TEXT_HEADING))
+    // The app menu is deliberately NOT a circle. Circles are this desktop's
+    // vocabulary for window controls; making the menu one more circle is what
+    // made it read as a fourth window button. A rounded square, quiet until
+    // hovered, says "different kind of thing" before the glyph is even read.
+    let menu_button = button(
+        container(text(theme::MENU_GLYPH).size(theme::TEXT_HEADING))
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Alignment::Center)
@@ -138,6 +102,50 @@ fn header_control<'a>(
     )
     .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
     .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
+    .padding(0)
+    .on_press(Message::ToggleMenu)
+    .style(if app.menu_open {
+        quiet_button
+    } else {
+        app_menu_button
+    });
+
+    container(
+        row![grip, menu_button, controls]
+            .spacing(theme::SPACE_XL)
+            .align_y(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fixed(theme::HEADER_HEIGHT))
+    .padding([0.0, theme::SPACE_MD])
+    .style(header_container)
+    .into()
+}
+
+/// One circular window control. The glyph is stroked on a canvas rather than
+/// typed, so all three share a width, a box and a cap.
+fn window_control<'a>(
+    glyph: WindowGlyph,
+    message: Message,
+    is_close: bool,
+) -> Element<'a, Message> {
+    let style = if is_close {
+        close_control_button
+    } else {
+        window_control_button
+    };
+    button(
+        container(window_icon::glyph(
+            glyph,
+            window_glyph_color(false, is_close),
+        ))
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center),
+    )
+    .width(Length::Fixed(window_icon::CONTROL_SIZE))
+    .height(Length::Fixed(window_icon::CONTROL_SIZE))
     .padding(0)
     .on_press(message)
     .style(style)
