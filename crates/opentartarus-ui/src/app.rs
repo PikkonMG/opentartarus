@@ -1426,7 +1426,40 @@ mod tests {
     }
 
     #[test]
-    fn profile_rows_carry_the_shipped_lighting_colour() {
+    fn the_shipped_pack_gives_each_game_its_own_swatch_colour() {
+        // Pure: reads the compiled-in pack, never the filesystem, so a user
+        // profile on the developer's machine cannot change the result.
+        let default = pack::shipped_profile("default").unwrap();
+        assert_eq!(
+            default.lighting.color, None,
+            "the shipped default profile has no colour"
+        );
+        let league = pack::shipped_profile("league-of-legends").unwrap();
+        assert_eq!(league.lighting.color, Some([0, 180, 255]));
+
+        let mut colours: Vec<[u8; 3]> = pack::SHIPPED_IDS
+            .iter()
+            .filter_map(|id| pack::shipped_profile(id).ok())
+            .filter_map(|profile| profile.lighting.color)
+            .collect();
+        let total = colours.len();
+        colours.sort_unstable();
+        colours.dedup();
+        assert_eq!(
+            colours.len(),
+            total,
+            "two shipped profiles share a sidebar swatch colour"
+        );
+    }
+
+    #[test]
+    fn profile_rows_cache_whatever_the_profile_source_reports() {
+        // The row's colour must be whatever `read_profile` resolves for that
+        // id — the user's own copy when there is one, the shipped pack
+        // otherwise. Asserting a hard-coded colour here would read the real
+        // XDG config and fail on a machine where the user has edited that
+        // profile, which is exactly what happened before this test was
+        // rewritten.
         let mut app = running_app();
         let _ = app.update(Message::IpcResponse {
             method: Some(Method::ListProfiles),
@@ -1441,14 +1474,11 @@ mod tests {
             })),
             error: None,
         });
-        let league = app
-            .profiles
-            .iter()
-            .find(|row| row.id == "league-of-legends")
-            .expect("league row");
-        assert_eq!(league.color, Some([0, 180, 255]));
-        let default = app.profiles.iter().find(|row| row.id == "default").unwrap();
-        assert_eq!(default.color, None, "the default profile has no colour");
+        assert_eq!(app.profiles.len(), 2);
+        for row in &app.profiles {
+            let expected = read_profile(&row.id).and_then(|profile| profile.lighting.color);
+            assert_eq!(row.color, expected, "row {} cached a stale colour", row.id);
+        }
     }
 
     #[test]
