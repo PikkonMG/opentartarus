@@ -73,6 +73,19 @@ After a successful fix, unplug the Tartarus, wait a second, and plug it back in.
 
 Login start files are in `packaging/`: a systemd user unit (`packaging/systemd/opentartarus-daemon.service`) and `packaging/autostart/opentartarus-daemon.desktop`. The window launcher is `packaging/desktop/opentartarus.desktop`.
 
+### Icon
+
+The tray icon is built into the daemon, so it shows with no install step.
+
+To give the desktop menu and the window the same icon, copy the SVG into your
+own icon directory and refresh the cache:
+
+    mkdir -p ~/.local/share/icons/hicolor/scalable/apps
+    cp packaging/icons/opentartarus.svg ~/.local/share/icons/hicolor/scalable/apps/
+    gtk-update-icon-cache -f -t ~/.local/share/icons/hicolor
+
+The last line is optional. Most desktops pick the file up on the next login.
+
 ## Layout
 
 - `crates/`

@@ -38,3 +38,25 @@ pub fn run() -> iced::Result {
         .exit_on_close_request(false)
         .run()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const ICON_SIDE_PX: u32 = 64;
+    const RGBA_BYTES_PER_PIXEL: u32 = 4;
+
+    #[test]
+    fn window_icon_decodes_from_a_64x64_rgba_png() {
+        let icon = window_icon().expect("the embedded PNG must decode to a window icon");
+        let (rgba, size) = icon.into_raw();
+        assert_eq!(size.width, ICON_SIDE_PX, "icon must be 64px wide");
+        assert_eq!(size.height, ICON_SIDE_PX, "icon must be 64px tall");
+        let expected_bytes = ICON_SIDE_PX * ICON_SIDE_PX * RGBA_BYTES_PER_PIXEL;
+        assert_eq!(
+            rgba.len(),
+            expected_bytes as usize,
+            "the buffer must hold 4 bytes (RGBA) per pixel"
+        );
+    }
+}
