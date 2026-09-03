@@ -253,15 +253,23 @@ pub fn inspector(app: &App) -> Element<'_, Message> {
                 panel = panel.push(macro_steps(macro_action));
             }
 
-            panel = panel.push(Space::with_height(Length::Fill));
-            panel = panel.push(
-                button(text(theme::BUTTON_CLEAR_BINDING).size(theme::TEXT_SMALL))
-                    .width(Length::Fill)
-                    .padding(theme::SPACE_SM)
-                    .on_press(Message::ClearBinding)
-                    .style(danger_text_button),
-            );
-            scrollable(panel).height(Length::Fill).into()
+            // `Clear this binding` sits below the scroll area, not inside it.
+            // iced panics outright if a scrollable's content fills the axis it
+            // scrolls, so the spacer that used to push this button down cannot
+            // live inside the scrollable.
+            let clear = button(text(theme::BUTTON_CLEAR_BINDING).size(theme::TEXT_SMALL))
+                .width(Length::Fill)
+                .padding(theme::SPACE_SM)
+                .on_press(Message::ClearBinding)
+                .style(danger_text_button);
+
+            column![
+                scrollable(panel).height(Length::Fill),
+                clear,
+            ]
+            .spacing(theme::SPACE_MD)
+            .height(Length::Fill)
+            .into()
         }
     };
 
