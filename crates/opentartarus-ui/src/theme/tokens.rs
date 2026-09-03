@@ -55,9 +55,12 @@ pub const COLOR_TEXT_FAINT: Color = rgb(
 
 // Meaning.
 pub const COLOR_ACCENT: Color = rgb(0x35, 0x84, 0xe4);
+pub const COLOR_ACCENT_HOVER: Color = rgb(0x46, 0x93, 0xf0);
+pub const COLOR_ACCENT_PRESSED: Color = rgb(0x2a, 0x6d, 0xc2);
 pub const COLOR_ACCENT_SOFT: Color = rgba(0x35, 0x84, 0xe4, ACCENT_SOFT_ALPHA);
 pub const COLOR_OK: Color = rgb(0x3a, 0xd0, 0x7f);
 pub const COLOR_DANGER: Color = rgb(0xe0, 0x5a, 0x5a);
+pub const COLOR_DANGER_PRESSED: Color = rgb(0xc4, 0x45, 0x45);
 
 // Window and band sizes.
 pub const WINDOW_WIDTH: f32 = 1120.0;
@@ -105,6 +108,30 @@ pub const EFFECT_GRID_COLUMNS: usize = 4;
 pub const BORDER_NONE: f32 = 0.0;
 pub const BORDER_HAIRLINE: f32 = 1.0;
 pub const BORDER_SELECTED: f32 = 2.0;
+
+// --- Keycap material -------------------------------------------------------
+//
+// The device this app configures is a slab of keys, so every control in the
+// app is built from one material: a soft square that sits up off its panel and
+// presses in when you push it. These are the numbers that make a surface read
+// as a cap rather than a rectangle.
+
+/// How far a resting cap's shadow falls. Straight down, because the light is
+/// directly above; an angled shadow would imply a light source the rest of the
+/// window does not have.
+pub const CAP_SHADOW_DROP: f32 = 2.0;
+/// Soft, not a hard offset block. A zero-blur shadow is a costume.
+pub const CAP_SHADOW_BLUR: f32 = 5.0;
+pub const CAP_SHADOW_ALPHA: f32 = 0.45;
+/// Pressed caps sit closer to the panel, so their shadow shortens and tightens.
+pub const CAP_PRESSED_DROP: f32 = 1.0;
+pub const CAP_PRESSED_BLUR: f32 = 2.0;
+/// The lit top edge of a cap, drawn as a hairline border one step brighter
+/// than the fill.
+pub const CAP_EDGE_ALPHA: f32 = 0.10;
+pub const COLOR_CAP_EDGE: Color = rgba(0xff, 0xff, 0xff, CAP_EDGE_ALPHA);
+/// A pressed cap loses its lit edge and darkens.
+pub const COLOR_KEY_PRESSED: Color = rgb(0x2b, 0x2b, 0x34);
 
 // Behaviour values carried over unchanged from the old theme.rs.
 pub const DISCONNECTED_OPACITY: f32 = 0.40;

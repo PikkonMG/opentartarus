@@ -84,7 +84,14 @@ impl Program<Message> for Keypad {
         let hover_fill = with_opacity(theme::COLOR_KEY_HOVER, opacity);
         let text_color = with_opacity(theme::COLOR_TEXT, opacity);
         let faint_color = with_opacity(theme::COLOR_TEXT_FAINT, opacity);
-        let line_color = with_opacity(theme::COLOR_LINE_STRONG, opacity);
+        let edge_color = with_opacity(theme::COLOR_CAP_EDGE, opacity);
+        let bevel_color = with_opacity(
+            iced::Color {
+                a: theme::CAP_SHADOW_ALPHA,
+                ..iced::Color::BLACK
+            },
+            opacity,
+        );
         let accent = with_opacity(theme::COLOR_ACCENT, opacity);
         let accent_soft = with_opacity(theme::COLOR_ACCENT_SOFT, opacity);
 
@@ -116,11 +123,23 @@ impl Program<Message> for Keypad {
             } else {
                 unbound_fill
             };
+            // A bevel, not a blurred shadow: the canvas has no blur, so this
+            // is an offset copy that peeks out below the cap and reads as its
+            // lower edge. Drawn first, so each cap sits on its own bevel
+            // rather than on its neighbour's.
+            let bevel = Path::rounded_rectangle(
+                Point::new(rect.x, rect.y + theme::CAP_SHADOW_DROP),
+                rect.size(),
+                iced::border::Radius::from(corner_for(id)),
+            );
+            frame.fill(&bevel, bevel_color);
             frame.fill(&path, fill);
+            // The lit top edge. A full stroke would ring the cap; only the
+            // upper arc catches the light, so the lower half is left dark.
             frame.stroke(
                 &path,
                 Stroke::default()
-                    .with_color(line_color)
+                    .with_color(edge_color)
                     .with_width(theme::BORDER_HAIRLINE),
             );
             if self.selected == Some(id) {

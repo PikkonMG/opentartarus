@@ -2,7 +2,7 @@ use crate::app::{Message, Tab};
 use crate::theme;
 use iced::widget::{button, container, text, Space};
 use iced::border::Radius;
-use iced::{Background, Border, Color, Element, Length, Theme};
+use iced::{Background, Border, Color, Element, Length, Shadow, Theme, Vector};
 
 // This module is the shared style vocabulary the view modules draw from.
 // Every function below is covered by the tests at the bottom of this file.
@@ -90,41 +90,96 @@ fn control(
     }
 }
 
+/// The shadow a cap casts at rest, or while pressed into its panel.
+pub fn cap_shadow(pressed: bool) -> Shadow {
+    let (drop, blur) = if pressed {
+        (theme::CAP_PRESSED_DROP, theme::CAP_PRESSED_BLUR)
+    } else {
+        (theme::CAP_SHADOW_DROP, theme::CAP_SHADOW_BLUR)
+    };
+    Shadow {
+        color: Color {
+            a: theme::CAP_SHADOW_ALPHA,
+            ..Color::BLACK
+        },
+        offset: Vector::new(0.0, drop),
+        blur_radius: blur,
+    }
+}
+
+/// The app's one material: a key.
+///
+/// Every control the user can push is built from this, so the window reads as
+/// the same slab of caps the device itself is. A cap sits up off its panel,
+/// carries a lit top edge, and presses in — losing the edge, darkening, and
+/// pulling its shadow tight — when pushed.
+pub fn keycap(
+    resting: Color,
+    hovered: Color,
+    text_color: Color,
+    radius: f32,
+    status: button::Status,
+) -> button::Style {
+    let pressed = matches!(status, button::Status::Pressed);
+    let fill = match status {
+        button::Status::Pressed => theme::COLOR_KEY_PRESSED,
+        button::Status::Hovered => hovered,
+        _ => resting,
+    };
+    button::Style {
+        background: Some(Background::Color(fill)),
+        text_color,
+        border: Border {
+            // The lit edge is what makes it a cap rather than a swatch. A
+            // pressed cap has sunk below the light, so it loses the edge.
+            color: if pressed {
+                Color::TRANSPARENT
+            } else {
+                theme::COLOR_CAP_EDGE
+            },
+            width: theme::BORDER_HAIRLINE,
+            radius: radius.into(),
+        },
+        shadow: cap_shadow(pressed),
+    }
+}
+
 /// The single accent-filled action on any screen.
 pub fn primary_button(_theme: &Theme, status: button::Status) -> button::Style {
-    control(
+    let mut style = keycap(
         theme::COLOR_ACCENT,
-        theme::COLOR_ACCENT,
+        theme::COLOR_ACCENT_HOVER,
         Color::WHITE,
-        theme::COLOR_ACCENT,
         theme::RADIUS_CONTROL,
-        theme::BORDER_HAIRLINE,
         status,
-    )
+    );
+    // The accent cap keeps its own colour when pressed rather than falling
+    // back to the neutral pressed fill, or the primary action would look
+    // disabled at the moment it is used.
+    if matches!(status, button::Status::Pressed) {
+        style.background = Some(Background::Color(theme::COLOR_ACCENT_PRESSED));
+    }
+    style
 }
 
 /// A normal secondary control.
 pub fn quiet_button(_theme: &Theme, status: button::Status) -> button::Style {
-    control(
-        theme::COLOR_RAISED,
+    keycap(
         theme::COLOR_KEY,
+        theme::COLOR_KEY_HOVER,
         theme::COLOR_TEXT,
-        theme::COLOR_LINE,
         theme::RADIUS_CONTROL,
-        theme::BORDER_HAIRLINE,
         status,
     )
 }
 
 /// A small rounded pill, used for the mouse targets.
 pub fn chip_button(_theme: &Theme, status: button::Status) -> button::Style {
-    control(
-        theme::COLOR_RAISED,
+    keycap(
         theme::COLOR_KEY,
-        theme::COLOR_TEXT_DIM,
-        theme::COLOR_LINE,
+        theme::COLOR_KEY_HOVER,
+        theme::COLOR_TEXT,
         theme::RADIUS_PILL,
-        theme::BORDER_HAIRLINE,
         status,
     )
 }
@@ -198,37 +253,41 @@ pub fn accent_text_button(_theme: &Theme, status: button::Status) -> button::Sty
     )
 }
 
-/// A title-bar control: a filled circle, the way this desktop draws its own
-/// window buttons. Minimize and maximize.
+/// A title-bar control: a small cap, the same material as everything else in
+/// the window. Minimize and maximize.
 pub fn window_control_button(_theme: &Theme, status: button::Status) -> button::Style {
-    control(
-        theme::COLOR_RAISED,
+    keycap(
+        theme::COLOR_KEY,
         theme::COLOR_KEY_HOVER,
         theme::COLOR_TEXT_DIM,
-        Color::TRANSPARENT,
-        theme::RADIUS_PILL,
-        theme::BORDER_NONE,
+        theme::RADIUS_KEY,
         status,
     )
 }
 
-/// The close control. Same circle as its neighbours, red on hover, which is
-/// the one place in the row a colour change carries meaning.
+/// The close cap. Same material, but it lights red under the pointer, the one
+/// place in the row where colour carries meaning.
 pub fn close_control_button(_theme: &Theme, status: button::Status) -> button::Style {
-    control(
-        theme::COLOR_RAISED,
+    let mut style = keycap(
+        theme::COLOR_KEY,
         theme::COLOR_DANGER,
         theme::COLOR_TEXT_DIM,
-        Color::TRANSPARENT,
-        theme::RADIUS_PILL,
-        theme::BORDER_NONE,
+        theme::RADIUS_KEY,
         status,
-    )
+    );
+    if matches!(status, button::Status::Pressed) {
+        style.background = Some(Background::Color(theme::COLOR_DANGER_PRESSED));
+        style.text_color = Color::WHITE;
+    }
+    style
 }
 
 /// The app menu's own button: a rounded square, not a circle, because circles
 /// in this header mean "window control". Quiet until hovered.
 pub fn app_menu_button(_theme: &Theme, status: button::Status) -> button::Style {
+    // Flat on purpose. Everything the user pushes is a cap; the app menu is
+    // not a key on the device, so it stays a plain surface and never joins the
+    // row of window caps beside it.
     control(
         Color::TRANSPARENT,
         theme::COLOR_RAISED,

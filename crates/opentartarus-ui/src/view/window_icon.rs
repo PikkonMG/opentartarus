@@ -103,6 +103,7 @@ pub fn glyph<'a>(glyph: WindowGlyph, color: Color) -> Element<'a, Message> {
 /// and this module sizes its glyph from the same source.
 pub const CONTROL_SIZE: f32 = theme::ICON_BUTTON_SIZE;
 
+
 #[cfg(test)]
 mod tests {
     use super::*;
