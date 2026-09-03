@@ -118,6 +118,10 @@ pub enum Message {
     ToggleMenu,
     HoverKey(Option<KeyId>),
     LightingPreset([u8; 3]),
+    DragWindow,
+    MinimizeWindow,
+    ToggleMaximize,
+    CloseWindow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -496,6 +500,40 @@ impl App {
                 self.lighting_saved = true;
                 Task::none()
             }
+            // The window has no system title bar, so the header does the work
+            // a title bar normally would. Each of these resolves the window id
+            // at call time, because it is not known until the window opens.
+            Message::DragWindow => self.with_window(window::drag),
+            Message::MinimizeWindow => {
+                self.menu_open = false;
+                self.with_window(|id| window::minimize(id, true))
+            }
+            Message::ToggleMaximize => {
+                self.menu_open = false;
+                self.with_window(window::toggle_maximize)
+            }
+            Message::CloseWindow => {
+                self.menu_open = false;
+                // Route through CloseRequested so the header's close button and
+                // the compositor's own close both take the same path: hide to
+                // tray on X11, exit the UI on Wayland.
+                self.with_window(|id| Task::done(Message::CloseRequested(id)))
+            }
+        }
+    }
+
+    /// Runs a window task against the current window, looking the id up when
+    /// it has not been cached yet.
+    fn with_window(
+        &self,
+        task: impl Fn(window::Id) -> Task<Message> + Send + 'static,
+    ) -> Task<Message> {
+        match self.window_id {
+            Some(id) => task(id),
+            None => window::get_latest().then(move |found| match found {
+                Some(id) => task(id),
+                None => Task::none(),
+            }),
         }
     }
 

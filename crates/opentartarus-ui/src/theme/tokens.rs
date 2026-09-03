@@ -73,6 +73,7 @@ pub const RADIUS_KEY: f32 = 9.0;
 pub const RADIUS_PILL: f32 = 99.0;
 
 // Spacing scale.
+pub const SPACE_XXS: f32 = 2.0;
 pub const SPACE_XS: f32 = 4.0;
 pub const SPACE_SM: f32 = 8.0;
 pub const SPACE_MD: f32 = 12.0;

@@ -21,8 +21,14 @@ pub fn row_is_selected(app: &App, row: &ProfileRow) -> bool {
     app.selected_profile_id.as_deref() == Some(row.id.as_str()) || row.is_active
 }
 
+/// How far `Revert to shipped` is inset so it lines up under a row's name
+/// rather than under its colour chip.
+const REVERT_INDENT: f32 = theme::SWATCH_SIZE + theme::SPACE_SM + theme::SPACE_MD;
+
 pub fn profile_list(app: &App) -> Element<'_, Message> {
-    let mut list = column![].spacing(theme::SPACE_XS);
+    // Rows sit close together so the list reads as one column of names, not a
+    // stack of separate controls.
+    let mut list = column![].spacing(theme::SPACE_XXS);
     for profile in &app.profiles {
         let selected = row_is_selected(app, profile);
         let entry = row![
@@ -36,7 +42,7 @@ pub fn profile_list(app: &App) -> Element<'_, Message> {
         list = list.push(
             button(entry)
                 .width(Length::Fill)
-                .padding([theme::SPACE_SM, theme::SPACE_MD])
+                .padding([theme::SPACE_XS, theme::SPACE_MD])
                 .on_press(Message::SelectProfile(profile.id.clone()))
                 .style(style),
         );
@@ -44,6 +50,7 @@ pub fn profile_list(app: &App) -> Element<'_, Message> {
         if profile.is_active && profile.can_revert {
             list = list.push(
                 button(text(theme::BUTTON_REVERT).size(theme::TEXT_SMALL))
+                    .padding([theme::SPACE_XXS, REVERT_INDENT])
                     .on_press(Message::RevertProfile)
                     .style(accent_text_button),
             );

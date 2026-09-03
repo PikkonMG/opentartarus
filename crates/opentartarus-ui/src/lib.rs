@@ -33,6 +33,11 @@ pub fn run() -> iced::Result {
         .window(iced::window::Settings {
             size: Size::new(WINDOW_WIDTH, WINDOW_HEIGHT),
             icon: window_icon(),
+            // No system title bar: the app's own header is the title bar, so
+            // the window reads as one surface instead of our chrome bolted
+            // under the desktop's. The header supplies drag, minimize,
+            // maximize and close.
+            decorations: false,
             ..iced::window::Settings::default()
         })
         .exit_on_close_request(false)

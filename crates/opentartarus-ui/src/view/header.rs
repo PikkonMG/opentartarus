@@ -1,7 +1,10 @@
 use crate::app::{App, Message, Phase};
 use crate::theme;
-use crate::view::widgets::{dot, hairline_color, quiet_button, surface_container};
-use iced::widget::{button, container, row, text, Space};
+use crate::view::widgets::{
+    close_control_button, dot, hairline_color, quiet_button, surface_container,
+    window_control_button,
+};
+use iced::widget::{button, container, mouse_area, row, text, Space};
 use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
 
 fn logo<'a>() -> Element<'a, Message> {
@@ -58,21 +61,53 @@ pub fn header_bar(app: &App) -> Element<'_, Message> {
         .on_press(Message::ToggleMenu)
         .style(quiet_button);
 
+    // The window has no system title bar, so this row is the title bar: the
+    // left half drags the window, the right half holds the window controls.
+    let grip = mouse_area(
+        row![
+            logo(),
+            text(theme::APP_TITLE).size(theme::TEXT_HEADING),
+            device_pill(app),
+            Space::with_width(Length::Fill),
+        ]
+        .spacing(theme::SPACE_MD)
+        .align_y(Alignment::Center),
+    )
+    .on_press(Message::DragWindow);
+
     let bar = row![
-        logo(),
-        text(theme::APP_TITLE).size(theme::TEXT_HEADING),
-        device_pill(app),
-        Space::with_width(Length::Fill),
+        grip,
         menu_button,
+        window_button(theme::MINIMIZE_GLYPH, Message::MinimizeWindow),
+        window_button(theme::MAXIMIZE_GLYPH, Message::ToggleMaximize),
+        close_button(),
     ]
-    .spacing(theme::SPACE_MD)
+    .spacing(theme::SPACE_XS)
     .align_y(Alignment::Center);
 
     container(bar)
         .width(Length::Fill)
         .height(Length::Fixed(theme::HEADER_HEIGHT))
-        .padding([0.0, theme::SPACE_LG])
+        .padding([0.0, theme::SPACE_MD])
         .style(surface_container)
+        .into()
+}
+
+fn window_button<'a>(glyph: &'a str, message: Message) -> Element<'a, Message> {
+    button(text(glyph).size(theme::TEXT_BODY))
+        .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
+        .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
+        .on_press(message)
+        .style(window_control_button)
+        .into()
+}
+
+fn close_button<'a>() -> Element<'a, Message> {
+    button(text(theme::CLOSE_GLYPH).size(theme::TEXT_TITLE))
+        .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
+        .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
+        .on_press(Message::CloseWindow)
+        .style(close_control_button)
         .into()
 }
 

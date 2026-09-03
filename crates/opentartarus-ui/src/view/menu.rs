@@ -8,6 +8,9 @@ use iced::{Alignment, Element, Length, Theme};
 /// rendering anything.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MenuEntry {
+    Minimize,
+    Maximize,
+    Close,
     FixPermissions,
     Quit,
 }
@@ -15,6 +18,9 @@ pub enum MenuEntry {
 impl MenuEntry {
     pub fn label(self) -> &'static str {
         match self {
+            MenuEntry::Minimize => theme::MENU_MINIMIZE,
+            MenuEntry::Maximize => theme::MENU_MAXIMIZE,
+            MenuEntry::Close => theme::MENU_CLOSE,
             MenuEntry::FixPermissions => theme::BUTTON_FIX_PERMISSIONS,
             MenuEntry::Quit => theme::BUTTON_QUIT,
         }
@@ -22,16 +28,28 @@ impl MenuEntry {
 
     pub fn message(self) -> Message {
         match self {
+            MenuEntry::Minimize => Message::MinimizeWindow,
+            MenuEntry::Maximize => Message::ToggleMaximize,
+            MenuEntry::Close => Message::CloseWindow,
             MenuEntry::FixPermissions => Message::FixPermissions,
             MenuEntry::Quit => Message::Quit,
         }
+    }
+
+    /// Quit stops the daemon too, so it is the only destructive entry.
+    pub fn is_destructive(self) -> bool {
+        matches!(self, MenuEntry::Quit)
     }
 }
 
 /// Repair is offered only while the permission banner is showing, so the menu
 /// never advertises a fix for a problem the user does not have.
 pub fn menu_entries(app: &App) -> Vec<MenuEntry> {
-    let mut entries = Vec::new();
+    let mut entries = vec![
+        MenuEntry::Minimize,
+        MenuEntry::Maximize,
+        MenuEntry::Close,
+    ];
     if matches!(app.banner(), Some(Banner::Permission)) {
         entries.push(MenuEntry::FixPermissions);
     }
@@ -42,7 +60,7 @@ pub fn menu_entries(app: &App) -> Vec<MenuEntry> {
 pub fn menu_popup(app: &App) -> Element<'_, Message> {
     let mut items = column![].spacing(theme::SPACE_XS);
     for entry in menu_entries(app) {
-        let style = if entry == MenuEntry::Quit {
+        let style = if entry.is_destructive() {
             danger_text_button
         } else {
             quiet_button
@@ -90,11 +108,17 @@ mod tests {
         }
     }
 
+    /// The window controls the menu always offers, in order.
+    const WINDOW_ENTRIES: [MenuEntry; 3] =
+        [MenuEntry::Minimize, MenuEntry::Maximize, MenuEntry::Close];
+
     #[test]
-    fn a_healthy_session_offers_only_quit() {
+    fn a_healthy_session_offers_window_controls_then_quit() {
         let app = running();
         assert_eq!(app.banner(), None);
-        assert_eq!(menu_entries(&app), vec![MenuEntry::Quit]);
+        let mut expected = WINDOW_ENTRIES.to_vec();
+        expected.push(MenuEntry::Quit);
+        assert_eq!(menu_entries(&app), expected);
     }
 
     #[test]
@@ -102,10 +126,10 @@ mod tests {
         let mut app = running();
         app.evdev_ok = false;
         assert_eq!(app.banner(), Some(Banner::Permission));
-        assert_eq!(
-            menu_entries(&app),
-            vec![MenuEntry::FixPermissions, MenuEntry::Quit]
-        );
+        let mut expected = WINDOW_ENTRIES.to_vec();
+        expected.push(MenuEntry::FixPermissions);
+        expected.push(MenuEntry::Quit);
+        assert_eq!(menu_entries(&app), expected);
     }
 
     #[test]
@@ -114,7 +138,32 @@ mod tests {
         app.device_present = false;
         app.ever_present = false;
         assert_eq!(app.banner(), Some(Banner::NoDevice));
-        assert_eq!(menu_entries(&app), vec![MenuEntry::Quit]);
+        assert!(!menu_entries(&app).contains(&MenuEntry::FixPermissions));
+    }
+
+    #[test]
+    fn window_controls_are_always_offered_and_come_first() {
+        let mut app = running();
+        assert_eq!(&menu_entries(&app)[..WINDOW_ENTRIES.len()], &WINDOW_ENTRIES);
+        app.evdev_ok = false;
+        assert_eq!(&menu_entries(&app)[..WINDOW_ENTRIES.len()], &WINDOW_ENTRIES);
+    }
+
+    #[test]
+    fn only_quit_is_destructive() {
+        // Quit stops the daemon; closing the window does not.
+        for entry in WINDOW_ENTRIES {
+            assert!(!entry.is_destructive(), "{entry:?} must not read as danger");
+        }
+        assert!(!MenuEntry::FixPermissions.is_destructive());
+        assert!(MenuEntry::Quit.is_destructive());
+    }
+
+    #[test]
+    fn closing_the_window_is_not_quitting_the_app() {
+        assert!(matches!(MenuEntry::Close.message(), Message::CloseWindow));
+        assert!(matches!(MenuEntry::Quit.message(), Message::Quit));
+        assert_ne!(MenuEntry::Close.label(), MenuEntry::Quit.label());
     }
 
     #[test]
@@ -132,10 +181,36 @@ mod tests {
             MenuEntry::FixPermissions.label(),
             theme::BUTTON_FIX_PERMISSIONS
         );
+        assert_eq!(MenuEntry::Minimize.label(), theme::MENU_MINIMIZE);
+        assert_eq!(MenuEntry::Maximize.label(), theme::MENU_MAXIMIZE);
+        assert_eq!(MenuEntry::Close.label(), theme::MENU_CLOSE);
+
         assert!(matches!(MenuEntry::Quit.message(), Message::Quit));
         assert!(matches!(
             MenuEntry::FixPermissions.message(),
             Message::FixPermissions
         ));
+        assert!(matches!(
+            MenuEntry::Minimize.message(),
+            Message::MinimizeWindow
+        ));
+        assert!(matches!(
+            MenuEntry::Maximize.message(),
+            Message::ToggleMaximize
+        ));
+
+        // No two entries may share a label, or the menu reads as a duplicate.
+        let mut labels: Vec<&str> = menu_entries(&{
+            let mut app = running();
+            app.evdev_ok = false;
+            app
+        })
+        .into_iter()
+        .map(MenuEntry::label)
+        .collect();
+        let total = labels.len();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(labels.len(), total, "menu labels must be unique");
     }
 }

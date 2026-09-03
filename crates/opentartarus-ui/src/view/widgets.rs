@@ -162,6 +162,42 @@ pub fn accent_text_button(_theme: &Theme, status: button::Status) -> button::Sty
     )
 }
 
+/// A title-bar control: minimize and maximize. Transparent until hovered, so
+/// the header reads as one surface rather than a row of buttons.
+pub fn window_control_button(_theme: &Theme, status: button::Status) -> button::Style {
+    control(
+        Color::TRANSPARENT,
+        theme::COLOR_RAISED,
+        theme::COLOR_TEXT_DIM,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
+/// The title bar's close control. Same shape as its neighbours, but it turns
+/// red on hover, the way a close button is expected to.
+pub fn close_control_button(_theme: &Theme, status: button::Status) -> button::Style {
+    let hovered = matches!(
+        status,
+        button::Status::Hovered | button::Status::Pressed
+    );
+    control(
+        Color::TRANSPARENT,
+        theme::COLOR_DANGER,
+        if hovered {
+            Color::WHITE
+        } else {
+            theme::COLOR_TEXT_DIM
+        },
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
 /// The small uppercase label above a group of controls.
 /// Takes an owned string so callers can pass a freshly built label, such as
 /// the brightness percentage, without fighting the borrow checker.
