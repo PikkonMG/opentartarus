@@ -25,7 +25,6 @@ pub const MOUSE_WHEEL_DOWN: &str = "Wheel-";
 // New strings for the redesign.
 pub const APP_TITLE: &str = "OpenTartarus";
 pub const LOGO_GLYPH: &str = "T";
-pub const MENU_GLYPH: &str = "\u{2630}";
 pub const MENU_FIX_DETAIL: &str = "Grant this app access to the keypad";
 pub const MENU_QUIT_DETAIL: &str = "Stops remapping and closes the tray";
 pub const TAB_KEYS: &str = "Keys";

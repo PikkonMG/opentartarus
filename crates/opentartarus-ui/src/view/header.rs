@@ -78,41 +78,45 @@ pub fn header_bar(app: &App) -> Element<'_, Message> {
     )
     .on_press(Message::DragWindow);
 
-    // Three circles, matching how this desktop draws its own window buttons.
-    // The app menu sits apart from them, with a gap, because it is not a
-    // window control and must not read as a fourth one.
+    // Four quiet glyphs in one row, same size, same stroke, same treatment.
+    // Nothing here is a key on the device, so none of it is a cap: the caps
+    // are for things you can bind. The menu sits first, a little apart.
+    let menu_button = header_control(
+        WindowGlyph::Menu,
+        Message::ToggleMenu,
+        if app.menu_open {
+            quiet_button
+        } else {
+            app_menu_button
+        },
+        false,
+    );
     let controls = row![
-        window_control(WindowGlyph::ChevronDown, Message::MinimizeWindow, false),
-        window_control(WindowGlyph::ChevronUp, Message::ToggleMaximize, false),
-        window_control(WindowGlyph::Cross, Message::CloseWindow, true),
+        header_control(
+            WindowGlyph::ChevronDown,
+            Message::MinimizeWindow,
+            window_control_button,
+            false,
+        ),
+        header_control(
+            WindowGlyph::ChevronUp,
+            Message::ToggleMaximize,
+            window_control_button,
+            false,
+        ),
+        header_control(
+            WindowGlyph::Cross,
+            Message::CloseWindow,
+            close_control_button,
+            true,
+        ),
     ]
-    .spacing(theme::SPACE_SM)
+    .spacing(theme::SPACE_XXS)
     .align_y(Alignment::Center);
-
-    // The app menu is deliberately NOT a circle. Circles are this desktop's
-    // vocabulary for window controls; making the menu one more circle is what
-    // made it read as a fourth window button. A rounded square, quiet until
-    // hovered, says "different kind of thing" before the glyph is even read.
-    let menu_button = button(
-        container(text(theme::MENU_GLYPH).size(theme::TEXT_HEADING))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center),
-    )
-    .width(Length::Fixed(theme::ICON_BUTTON_SIZE))
-    .height(Length::Fixed(theme::ICON_BUTTON_SIZE))
-    .padding(0)
-    .on_press(Message::ToggleMenu)
-    .style(if app.menu_open {
-        quiet_button
-    } else {
-        app_menu_button
-    });
 
     container(
         row![grip, menu_button, controls]
-            .spacing(theme::SPACE_XL)
+            .spacing(theme::SPACE_SM)
             .align_y(Alignment::Center),
     )
     .width(Length::Fill)
@@ -122,18 +126,14 @@ pub fn header_bar(app: &App) -> Element<'_, Message> {
     .into()
 }
 
-/// One circular window control. The glyph is stroked on a canvas rather than
-/// typed, so all three share a width, a box and a cap.
-fn window_control<'a>(
+/// One title-bar control. Every caller passes the same size, and the glyph is
+/// stroked on a canvas, so the four sit on one optical line at one weight.
+fn header_control<'a>(
     glyph: WindowGlyph,
     message: Message,
+    style: fn(&Theme, button::Status) -> button::Style,
     is_close: bool,
 ) -> Element<'a, Message> {
-    let style = if is_close {
-        close_control_button
-    } else {
-        window_control_button
-    };
     button(
         container(window_icon::glyph(
             glyph,

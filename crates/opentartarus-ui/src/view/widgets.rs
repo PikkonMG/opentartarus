@@ -253,41 +253,40 @@ pub fn accent_text_button(_theme: &Theme, status: button::Status) -> button::Sty
     )
 }
 
-/// A title-bar control: a small cap, the same material as everything else in
-/// the window. Minimize and maximize.
+/// A title-bar control. Quiet: just the glyph at rest, a soft fill under the
+/// pointer. The caps are for things that map to keys on the device; window
+/// controls are not, so they stay out of the way.
 pub fn window_control_button(_theme: &Theme, status: button::Status) -> button::Style {
-    keycap(
-        theme::COLOR_KEY,
-        theme::COLOR_KEY_HOVER,
+    control(
+        Color::TRANSPARENT,
+        theme::COLOR_RAISED,
         theme::COLOR_TEXT_DIM,
-        theme::RADIUS_KEY,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
         status,
     )
 }
 
-/// The close cap. Same material, but it lights red under the pointer, the one
-/// place in the row where colour carries meaning.
+/// The close control. Same quiet treatment, but it lights red under the
+/// pointer, the one place in the row where colour carries meaning.
 pub fn close_control_button(_theme: &Theme, status: button::Status) -> button::Style {
-    let mut style = keycap(
-        theme::COLOR_KEY,
+    control(
+        Color::TRANSPARENT,
         theme::COLOR_DANGER,
         theme::COLOR_TEXT_DIM,
-        theme::RADIUS_KEY,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
         status,
-    );
-    if matches!(status, button::Status::Pressed) {
-        style.background = Some(Background::Color(theme::COLOR_DANGER_PRESSED));
-        style.text_color = Color::WHITE;
-    }
-    style
+    )
 }
 
 /// The app menu's own button: a rounded square, not a circle, because circles
 /// in this header mean "window control". Quiet until hovered.
 pub fn app_menu_button(_theme: &Theme, status: button::Status) -> button::Style {
-    // Flat on purpose. Everything the user pushes is a cap; the app menu is
-    // not a key on the device, so it stays a plain surface and never joins the
-    // row of window caps beside it.
+    // Same quiet treatment as the window controls, so the four read as one
+    // row of glyphs rather than one odd one out.
     control(
         Color::TRANSPARENT,
         theme::COLOR_RAISED,

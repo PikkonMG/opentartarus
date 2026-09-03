@@ -24,6 +24,9 @@ const CHEVRON_REACH: f32 = 0.34;
 /// How far the chevron's point drops below its arms. Flatter than the cross,
 /// or it reads as an arrowhead; too flat and it reads as a dash.
 const CHEVRON_RISE: f32 = 0.26;
+/// The menu's three bars: half-width of each, and the gap between them.
+const MENU_BAR_REACH: f32 = 0.30;
+const MENU_BAR_GAP: f32 = 0.22;
 const HALF: f32 = 2.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +37,9 @@ pub enum WindowGlyph {
     ChevronUp,
     /// Close.
     Cross,
+    /// The app menu: three bars, drawn here so its stroke matches the
+    /// window controls beside it instead of coming from a font.
+    Menu,
 }
 
 /// Canvas program for one glyph. Colour is fixed at construction because a
@@ -60,6 +66,8 @@ impl Program<Message> for GlyphCanvas {
         let reach = GLYPH_BOX * REACH;
         let arm = GLYPH_BOX * CHEVRON_REACH;
         let rise = GLYPH_BOX * CHEVRON_RISE;
+        let bar = GLYPH_BOX * MENU_BAR_REACH;
+        let gap = GLYPH_BOX * MENU_BAR_GAP;
 
         let path = match self.glyph {
             WindowGlyph::ChevronDown => Path::new(|builder| {
@@ -77,6 +85,12 @@ impl Program<Message> for GlyphCanvas {
                 builder.line_to(Point::new(centre.x + reach, centre.y + reach));
                 builder.move_to(Point::new(centre.x + reach, centre.y - reach));
                 builder.line_to(Point::new(centre.x - reach, centre.y + reach));
+            }),
+            WindowGlyph::Menu => Path::new(|builder| {
+                for row in [-gap, 0.0, gap] {
+                    builder.move_to(Point::new(centre.x - bar, centre.y + row));
+                    builder.line_to(Point::new(centre.x + bar, centre.y + row));
+                }
             }),
         };
 
@@ -135,6 +149,16 @@ mod tests {
             GLYPH_BOX * CHEVRON_REACH + STROKE / HALF,
             GLYPH_BOX / HALF,
         );
+        assert_less(
+            "menu bar reach",
+            GLYPH_BOX * MENU_BAR_REACH + STROKE / HALF,
+            GLYPH_BOX / HALF,
+        );
+        assert_less(
+            "menu bar stack",
+            GLYPH_BOX * MENU_BAR_GAP + STROKE / HALF,
+            GLYPH_BOX / HALF,
+        );
     }
 
     #[test]
@@ -157,6 +181,7 @@ mod tests {
             WindowGlyph::ChevronDown,
             WindowGlyph::ChevronUp,
             WindowGlyph::Cross,
+            WindowGlyph::Menu,
         ];
         let mut seen = all.to_vec();
         seen.dedup();

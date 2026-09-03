@@ -60,7 +60,6 @@ pub const COLOR_ACCENT_PRESSED: Color = rgb(0x2a, 0x6d, 0xc2);
 pub const COLOR_ACCENT_SOFT: Color = rgba(0x35, 0x84, 0xe4, ACCENT_SOFT_ALPHA);
 pub const COLOR_OK: Color = rgb(0x3a, 0xd0, 0x7f);
 pub const COLOR_DANGER: Color = rgb(0xe0, 0x5a, 0x5a);
-pub const COLOR_DANGER_PRESSED: Color = rgb(0xc4, 0x45, 0x45);
 
 // Window and band sizes.
 pub const WINDOW_WIDTH: f32 = 1120.0;
@@ -119,16 +118,16 @@ pub const BORDER_SELECTED: f32 = 2.0;
 /// How far a resting cap's shadow falls. Straight down, because the light is
 /// directly above; an angled shadow would imply a light source the rest of the
 /// window does not have.
-pub const CAP_SHADOW_DROP: f32 = 2.0;
+pub const CAP_SHADOW_DROP: f32 = 1.5;
 /// Soft, not a hard offset block. A zero-blur shadow is a costume.
-pub const CAP_SHADOW_BLUR: f32 = 5.0;
-pub const CAP_SHADOW_ALPHA: f32 = 0.45;
+pub const CAP_SHADOW_BLUR: f32 = 4.0;
+pub const CAP_SHADOW_ALPHA: f32 = 0.22;
 /// Pressed caps sit closer to the panel, so their shadow shortens and tightens.
 pub const CAP_PRESSED_DROP: f32 = 1.0;
 pub const CAP_PRESSED_BLUR: f32 = 2.0;
 /// The lit top edge of a cap, drawn as a hairline border one step brighter
 /// than the fill.
-pub const CAP_EDGE_ALPHA: f32 = 0.10;
+pub const CAP_EDGE_ALPHA: f32 = 0.06;
 pub const COLOR_CAP_EDGE: Color = rgba(0xff, 0xff, 0xff, CAP_EDGE_ALPHA);
 /// A pressed cap loses its lit edge and darkens.
 pub const COLOR_KEY_PRESSED: Color = rgb(0x2b, 0x2b, 0x34);
