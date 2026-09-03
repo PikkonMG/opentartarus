@@ -23,6 +23,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             bindings: app.bindings.clone(),
             selected: app.selected_key,
             faded: app.keypad_faded(),
+            hovered: app.hovered_key,
         }),
         bind_panel(app),
     ]
