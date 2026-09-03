@@ -34,6 +34,14 @@ pub enum Phase {
     FailedStart,
 }
 
+/// Which panel the centre column shows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Tab {
+    #[default]
+    Keys,
+    Lighting,
+}
+
 #[derive(Debug, Clone)]
 pub struct ProfileRow {
     pub id: String,
@@ -103,6 +111,10 @@ pub enum Message {
     Quit,
     CloseRequested(window::Id),
     WindowId(Option<window::Id>),
+    SelectTab(Tab),
+    ToggleMenu,
+    HoverKey(Option<KeyId>),
+    LightingPreset([u8; 3]),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -146,6 +158,10 @@ pub struct App {
     pub after_fix_permissions: bool,
     pub last_error: Option<String>,
     pub hidden: bool,
+    pub tab: Tab,
+    pub menu_open: bool,
+    pub hovered_key: Option<KeyId>,
+    pub lighting_saved: bool,
 }
 
 impl Default for App {
@@ -177,6 +193,10 @@ impl Default for App {
             after_fix_permissions: false,
             last_error: None,
             hidden: false,
+            tab: Tab::default(),
+            menu_open: false,
+            hovered_key: None,
+            lighting_saved: false,
         }
     }
 }
@@ -245,6 +265,7 @@ impl App {
             }
             Message::IpcEvent { method, params } => self.handle_event(method, params),
             Message::SelectProfile(id) => {
+                self.lighting_saved = false;
                 self.combo_focused = false;
                 self.selected_profile_id = Some(id.clone());
                 self.send(Method::ApplyProfile, json!({ "id": id }));
@@ -394,11 +415,13 @@ impl App {
                     self.lighting.color = Some(theme::DEFAULT_LIGHT_COLOR);
                 }
                 self.send_lighting();
+                self.lighting_saved = true;
                 Task::none()
             }
             Message::LightingBrightness(value) => {
                 self.lighting.brightness = value.min(theme::BRIGHTNESS_MAX);
                 self.send_lighting();
+                self.lighting_saved = true;
                 Task::none()
             }
             Message::LightingColor(channel, value) => {
@@ -408,6 +431,7 @@ impl App {
                 }
                 self.lighting.color = Some(rgb);
                 self.send_lighting();
+                self.lighting_saved = true;
                 Task::none()
             }
             Message::RevertProfile => {
@@ -417,6 +441,7 @@ impl App {
                 Task::none()
             }
             Message::FixPermissions => {
+                self.menu_open = false;
                 Task::perform(client::run_fix_permissions(), Message::FixPermissionsDone)
             }
             Message::FixPermissionsDone(outcome) => {
@@ -430,6 +455,7 @@ impl App {
                 Task::none()
             }
             Message::Quit => {
+                self.menu_open = false;
                 self.send(Method::QuitDaemon, json!({}));
                 iced::exit()
             }
@@ -446,6 +472,25 @@ impl App {
             }
             Message::WindowId(id) => {
                 self.window_id = id;
+                Task::none()
+            }
+            Message::SelectTab(tab) => {
+                self.tab = tab;
+                self.menu_open = false;
+                Task::none()
+            }
+            Message::ToggleMenu => {
+                self.menu_open = !self.menu_open;
+                Task::none()
+            }
+            Message::HoverKey(id) => {
+                self.hovered_key = id;
+                Task::none()
+            }
+            Message::LightingPreset(rgb) => {
+                self.lighting.color = Some(rgb);
+                self.send_lighting();
+                self.lighting_saved = true;
                 Task::none()
             }
         }
@@ -489,6 +534,41 @@ impl App {
                     None
                 }
             }
+        }
+    }
+
+    /// The name of the active profile, read from the profile rows rather than
+    /// from the id, so the status bar shows what the sidebar shows.
+    pub fn active_profile_name(&self) -> Option<&str> {
+        let id = self.active_profile_id.as_deref()?;
+        self.profiles
+            .iter()
+            .find(|row| row.id == id)
+            .map(|row| row.name.as_str())
+    }
+
+    /// The status bar text. A lighting write wins over the profile name,
+    /// because it is the more recent thing the user did.
+    pub fn status_line(&self) -> String {
+        if self.lighting_saved {
+            return String::from(theme::STATUS_LIGHTING_SAVED);
+        }
+        match self.active_profile_name() {
+            Some(name) => format!("{name}{}", theme::STATUS_APPLIED_SUFFIX),
+            None => String::from(theme::STATUS_READY),
+        }
+    }
+
+    /// The header pill text. A present device with an unknown model reads as
+    /// absent, because we cannot name the pad we are drawing.
+    pub fn device_pill_text(&self) -> &'static str {
+        if !self.device_present {
+            return theme::DEVICE_NOT_CONNECTED;
+        }
+        match self.model {
+            Some(DeviceModel::V2) => theme::DEVICE_CONNECTED_V2,
+            Some(DeviceModel::Pro) => theme::DEVICE_CONNECTED_PRO,
+            None => theme::DEVICE_NOT_CONNECTED,
         }
     }
 
@@ -1138,5 +1218,143 @@ mod tests {
             app.lighting_footer_message(),
             Some(ErrorCode::Lighting.user_message())
         );
+    }
+
+    fn app_with_profiles() -> App {
+        let mut app = running_app();
+        app.profiles = vec![
+            ProfileRow {
+                id: "default".into(),
+                name: "Default".into(),
+                is_active: false,
+                can_revert: false,
+            },
+            ProfileRow {
+                id: "league-of-legends".into(),
+                name: "League of Legends".into(),
+                is_active: true,
+                can_revert: true,
+            },
+        ];
+        app.active_profile_id = Some("league-of-legends".into());
+        app
+    }
+
+    #[test]
+    fn tab_starts_on_keys_and_switching_closes_the_menu() {
+        let mut app = running_app();
+        assert_eq!(app.tab, Tab::Keys);
+        app.menu_open = true;
+        let _ = app.update(Message::SelectTab(Tab::Lighting));
+        assert_eq!(app.tab, Tab::Lighting);
+        assert!(!app.menu_open, "switching tabs must dismiss the menu");
+        let _ = app.update(Message::SelectTab(Tab::Keys));
+        assert_eq!(app.tab, Tab::Keys);
+    }
+
+    #[test]
+    fn toggle_menu_flips_and_actions_dismiss_it() {
+        let mut app = running_app();
+        assert!(!app.menu_open);
+        let _ = app.update(Message::ToggleMenu);
+        assert!(app.menu_open);
+        let _ = app.update(Message::ToggleMenu);
+        assert!(!app.menu_open);
+
+        app.menu_open = true;
+        let _ = app.update(Message::FixPermissions);
+        assert!(!app.menu_open, "Fix permissions must dismiss the menu");
+    }
+
+    #[test]
+    fn quit_still_quits_the_daemon_from_the_menu() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        app.menu_open = true;
+        let _ = app.update(Message::Quit);
+        assert!(!app.menu_open);
+        assert_eq!(rx.try_recv().unwrap().method, Method::QuitDaemon);
+    }
+
+    #[test]
+    fn hover_sets_and_clears_the_highlighted_key() {
+        let mut app = running_app();
+        assert_eq!(app.hovered_key, None);
+        let _ = app.update(Message::HoverKey(Some(KeyId::Kp07)));
+        assert_eq!(app.hovered_key, Some(KeyId::Kp07));
+        let _ = app.update(Message::HoverKey(None));
+        assert_eq!(app.hovered_key, None);
+    }
+
+    #[test]
+    fn lighting_preset_sets_all_three_channels_in_one_write() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = app_with_profiles();
+        app.ipc_tx = Some(tx);
+        app.lighting.effect = LightingEffect::Static;
+        let _ = app.update(Message::LightingPreset([0x00, 0xb4, 0xff]));
+        assert_eq!(app.lighting.color, Some([0x00, 0xb4, 0xff]));
+        assert!(app.lighting_saved);
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::SetLighting);
+        assert!(
+            rx.try_recv().is_err(),
+            "a preset must send exactly one write"
+        );
+    }
+
+    #[test]
+    fn every_lighting_change_marks_the_status_line() {
+        let mut app = app_with_profiles();
+        assert!(!app.lighting_saved);
+        let _ = app.update(Message::LightingBrightness(50));
+        assert!(app.lighting_saved);
+        assert_eq!(app.status_line(), theme::STATUS_LIGHTING_SAVED);
+    }
+
+    #[test]
+    fn picking_a_profile_replaces_the_lighting_status() {
+        let mut app = app_with_profiles();
+        app.lighting_saved = true;
+        let _ = app.update(Message::SelectProfile("default".into()));
+        assert!(!app.lighting_saved);
+    }
+
+    #[test]
+    fn status_line_falls_back_from_profile_to_ready() {
+        let mut app = app_with_profiles();
+        assert_eq!(
+            app.status_line(),
+            format!("League of Legends{}", theme::STATUS_APPLIED_SUFFIX)
+        );
+
+        app.active_profile_id = None;
+        assert_eq!(app.status_line(), theme::STATUS_READY);
+
+        app.lighting_saved = true;
+        assert_eq!(app.status_line(), theme::STATUS_LIGHTING_SAVED);
+    }
+
+    #[test]
+    fn device_pill_names_the_connected_model() {
+        let mut app = running_app();
+        app.model = Some(DeviceModel::V2);
+        assert_eq!(app.device_pill_text(), theme::DEVICE_CONNECTED_V2);
+        app.model = Some(DeviceModel::Pro);
+        assert_eq!(app.device_pill_text(), theme::DEVICE_CONNECTED_PRO);
+        app.device_present = false;
+        assert_eq!(app.device_pill_text(), theme::DEVICE_NOT_CONNECTED);
+        app.device_present = true;
+        app.model = None;
+        assert_eq!(app.device_pill_text(), theme::DEVICE_NOT_CONNECTED);
+    }
+
+    #[test]
+    fn active_profile_name_reads_the_row_not_the_id() {
+        let app = app_with_profiles();
+        assert_eq!(app.active_profile_name(), Some("League of Legends"));
+        let empty = running_app();
+        assert_eq!(empty.active_profile_name(), None);
     }
 }
