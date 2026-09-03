@@ -1,6 +1,7 @@
 use crate::app::{Message, Tab};
 use crate::theme;
 use iced::widget::{button, container, text, Space};
+use iced::border::Radius;
 use iced::{Background, Border, Color, Element, Length, Theme};
 
 // This module is the shared style vocabulary the view modules draw from.
@@ -20,11 +21,46 @@ pub fn card_container(_theme: &Theme) -> container::Style {
     }
 }
 
-/// A flat band: the header, the sidebar, the inspector, the status bar.
+/// A flat band: the sidebar and the inspector. Square, because these sit
+/// between the header and the status bar and never touch a window corner.
 pub fn surface_container(_theme: &Theme) -> container::Style {
     container::Style {
         background: Some(Background::Color(theme::COLOR_SURFACE)),
         text_color: Some(theme::COLOR_TEXT),
+        ..container::Style::default()
+    }
+}
+
+/// The top band. iced does not clip a child to its parent's rounded corners,
+/// so the header must round its own two upper corners or it paints square over
+/// the window pane's curve.
+pub fn header_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(theme::COLOR_SURFACE)),
+        text_color: Some(theme::COLOR_TEXT),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: theme::BORDER_NONE,
+            radius: Radius::new(theme::BORDER_NONE)
+                .top_left(crate::app::window_radius())
+                .top_right(crate::app::window_radius()),
+        },
+        ..container::Style::default()
+    }
+}
+
+/// The bottom band, rounding the window pane's two lower corners.
+pub fn status_container(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(theme::COLOR_SURFACE)),
+        text_color: Some(theme::COLOR_TEXT),
+        border: Border {
+            color: Color::TRANSPARENT,
+            width: theme::BORDER_NONE,
+            radius: Radius::new(theme::BORDER_NONE)
+                .bottom_left(crate::app::window_radius())
+                .bottom_right(crate::app::window_radius()),
+        },
         ..container::Style::default()
     }
 }

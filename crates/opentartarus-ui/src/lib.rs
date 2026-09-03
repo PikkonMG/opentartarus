@@ -27,7 +27,10 @@ pub fn run() -> iced::Result {
         .subscription(App::subscription)
         .theme(App::theme)
         .style(|_state, _theme| iced::application::Appearance {
-            background_color: theme::COLOR_BACKGROUND,
+            // The window paints nothing itself. `view` draws a rounded panel
+            // instead, and the corners outside it stay clear, which is what
+            // gives a frameless window rounded corners at all.
+            background_color: iced::Color::TRANSPARENT,
             text_color: theme::COLOR_TEXT,
         })
         .window(iced::window::Settings {
@@ -38,6 +41,9 @@ pub fn run() -> iced::Result {
             // under the desktop's. The header supplies drag, minimize,
             // maximize and close.
             decorations: false,
+            // Rounded corners need clear corner pixels. Only where the
+            // session supports it: see app::window_is_rounded.
+            transparent: crate::app::window_is_rounded(),
             ..iced::window::Settings::default()
         })
         .exit_on_close_request(false)

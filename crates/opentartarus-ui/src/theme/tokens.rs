@@ -24,13 +24,15 @@ const fn rgba(r: u8, g: u8, b: u8, a: f32) -> Color {
     }
 }
 
-// Surfaces, back to front.
-pub const COLOR_BACKGROUND: Color = rgb(0x1b, 0x1b, 0x21);
-pub const COLOR_SURFACE: Color = rgb(0x23, 0x23, 0x29);
-pub const COLOR_RAISED: Color = rgb(0x2b, 0x2b, 0x33);
-pub const COLOR_KEY: Color = rgb(0x32, 0x32, 0x3c);
-pub const COLOR_KEY_HOVER: Color = rgb(0x3c, 0x3c, 0x48);
-pub const COLOR_KEY_UNBOUND: Color = rgb(0x2a, 0x2a, 0x33);
+// Surfaces, back to front. Each step is wide enough to read as a separate
+// object without a border doing the work, which is what keeps the window
+// looking solid rather than wireframed.
+pub const COLOR_BACKGROUND: Color = rgb(0x17, 0x17, 0x1c);
+pub const COLOR_SURFACE: Color = rgb(0x21, 0x21, 0x27);
+pub const COLOR_RAISED: Color = rgb(0x2c, 0x2c, 0x35);
+pub const COLOR_KEY: Color = rgb(0x38, 0x38, 0x43);
+pub const COLOR_KEY_HOVER: Color = rgb(0x45, 0x45, 0x52);
+pub const COLOR_KEY_UNBOUND: Color = rgb(0x28, 0x28, 0x30);
 
 // Hairlines.
 pub const COLOR_LINE: Color = rgba(0xff, 0xff, 0xff, LINE_ALPHA);
@@ -66,10 +68,12 @@ pub const PROFILE_LIST_WIDTH: f32 = 206.0;
 pub const INSPECTOR_WIDTH: f32 = 290.0;
 pub const MENU_WIDTH: f32 = 200.0;
 
-// Corner radii.
+// Corner radii. The window is frameless, so it rounds its own corners; the
+// compositor is not doing it for us.
+pub const RADIUS_WINDOW: f32 = 12.0;
 pub const RADIUS_CARD: f32 = 12.0;
-pub const RADIUS_CONTROL: f32 = 8.0;
-pub const RADIUS_KEY: f32 = 9.0;
+pub const RADIUS_CONTROL: f32 = 9.0;
+pub const RADIUS_KEY: f32 = 10.0;
 pub const RADIUS_PILL: f32 = 99.0;
 
 // Spacing scale.

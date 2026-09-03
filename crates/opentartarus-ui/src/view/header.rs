@@ -1,10 +1,10 @@
 use crate::app::{App, Message, Phase};
 use crate::theme;
 use crate::view::widgets::{
-    close_control_button, dot, hairline_color, quiet_button, surface_container,
+    close_control_button, dot, hairline_color, header_container, quiet_button,
     window_control_button,
 };
-use iced::widget::{button, container, mouse_area, row, text, Space};
+use iced::widget::{button, container, mouse_area, row, text};
 use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
 
 fn logo<'a>() -> Element<'a, Message> {
@@ -57,14 +57,22 @@ fn device_pill(app: &App) -> Element<'_, Message> {
 pub fn header_bar(app: &App) -> Element<'_, Message> {
     // The window has no system title bar, so this row is the title bar: the
     // left half drags the window, the right half holds the window controls.
+    // The grip must claim every pixel left over after the controls, or only
+    // the logo and title drag and the empty middle of the bar does nothing.
+    // A bare `Space::with_width(Fill)` inside the row is not enough: the
+    // mouse_area has to be told to fill too.
     let grip = mouse_area(
-        row![
-            logo(),
-            text(theme::APP_TITLE).size(theme::TEXT_HEADING),
-            device_pill(app),
-            Space::with_width(Length::Fill),
-        ]
-        .spacing(theme::SPACE_MD)
+        container(
+            row![
+                logo(),
+                text(theme::APP_TITLE).size(theme::TEXT_HEADING),
+                device_pill(app),
+            ]
+            .spacing(theme::SPACE_MD)
+            .align_y(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
         .align_y(Alignment::Center),
     )
     .on_press(Message::DragWindow);
@@ -110,7 +118,7 @@ pub fn header_bar(app: &App) -> Element<'_, Message> {
     .width(Length::Fill)
     .height(Length::Fixed(theme::HEADER_HEIGHT))
     .padding([0.0, theme::SPACE_SM])
-    .style(surface_container)
+    .style(header_container)
     .into()
 }
 

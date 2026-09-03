@@ -11,7 +11,7 @@ mod widgets;
 use crate::app::{App, Message};
 use crate::theme;
 use iced::widget::{column, container, row, stack};
-use iced::{Background, Element, Length, Theme};
+use iced::{Background, Border, Element, Length, Theme};
 
 pub fn view(app: &App) -> Element<'_, Message> {
     let body = row![
@@ -36,12 +36,21 @@ pub fn view(app: &App) -> Element<'_, Message> {
         page.into()
     };
 
+    // The window is frameless and transparent, so this container is the window
+    // pane: it draws the rounded shape the compositor would otherwise draw.
+    // iced does not clip children to a parent's radius, which is why the header
+    // and the status bar round their own outer corners to match.
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
         .style(|_theme: &Theme| container::Style {
             background: Some(Background::Color(theme::COLOR_BACKGROUND)),
             text_color: Some(theme::COLOR_TEXT),
+            border: Border {
+                color: theme::COLOR_LINE_STRONG,
+                width: theme::BORDER_HAIRLINE,
+                radius: crate::app::window_radius().into(),
+            },
             ..container::Style::default()
         })
         .into()

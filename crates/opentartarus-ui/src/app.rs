@@ -142,6 +142,29 @@ pub fn session_is_wayland() -> bool {
     std::env::var_os("WAYLAND_DISPLAY").is_some()
 }
 
+/// Whether the window may round its own corners.
+///
+/// Rounding a frameless window needs a transparent surface, so the corner
+/// pixels can be left clear. Wayland grants that; X11 and XWayland drop the
+/// connection instead and the process dies at startup. Measured on this
+/// machine: identical build, `transparent: true` exits under XWayland,
+/// `transparent: false` runs. So the corners are square on X11 rather than
+/// the app being unusable there.
+pub fn window_is_rounded() -> bool {
+    static ROUNDED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ROUNDED.get_or_init(session_is_wayland)
+}
+
+/// The window pane's corner radius, and the matching radius the header and
+/// status bar use on their outer corners. Zero where rounding is unavailable.
+pub fn window_radius() -> f32 {
+    if window_is_rounded() {
+        theme::RADIUS_WINDOW
+    } else {
+        theme::BORDER_NONE
+    }
+}
+
 pub struct App {
     pub ipc_tx: Option<mpsc::UnboundedSender<Outgoing>>,
     pub phase: Phase,

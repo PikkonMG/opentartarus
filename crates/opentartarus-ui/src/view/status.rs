@@ -1,7 +1,7 @@
 use crate::app::{App, Message};
 use crate::theme;
 use crate::view::header::session_is_live;
-use crate::view::widgets::{dot, hairline_color, surface_container};
+use crate::view::widgets::{dot, hairline_color, status_container};
 use iced::widget::{container, row, text};
 use iced::{Alignment, Element, Length};
 
@@ -19,6 +19,6 @@ pub fn status_bar(app: &App) -> Element<'_, Message> {
         .width(Length::Fill)
         .height(Length::Fixed(theme::STATUS_BAR_HEIGHT))
         .padding([0.0, theme::SPACE_LG])
-        .style(surface_container)
+        .style(status_container)
         .into()
 }
