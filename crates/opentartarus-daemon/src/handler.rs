@@ -458,17 +458,7 @@ mod tests {
         let v = handle_request(&mut st, Method::ListProfiles, json!({}), 1).unwrap();
         let rows = v["profiles"].as_array().unwrap();
         let ids: Vec<&str> = rows.iter().map(|r| r["id"].as_str().unwrap()).collect();
-        assert_eq!(
-            ids,
-            vec![
-                "default",
-                "league-of-legends",
-                "dota-2",
-                "world-of-warcraft",
-                "final-fantasy-xiv",
-                "path-of-exile"
-            ]
-        );
+        assert_eq!(ids, SHIPPED_IDS.to_vec());
         assert_eq!(rows[0]["source"], "user");
         assert_eq!(rows[0]["is_active"], true);
         assert_eq!(rows[0]["can_revert"], true);

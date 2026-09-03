@@ -397,6 +397,20 @@ pub enum GameId {
     WorldOfWarcraft,
     FinalFantasyXiv,
     PathOfExile,
+    #[serde(rename = "overwatch-2")]
+    Overwatch2,
+    Valorant,
+    #[serde(rename = "counter-strike-2")]
+    CounterStrike2,
+    ApexLegends,
+    Fortnite,
+    #[serde(rename = "diablo-4")]
+    Diablo4,
+    EldenRing,
+    #[serde(rename = "guild-wars-2")]
+    GuildWars2,
+    ElderScrollsOnline,
+    Minecraft,
 }
 
 #[derive(Debug, Deserialize)]

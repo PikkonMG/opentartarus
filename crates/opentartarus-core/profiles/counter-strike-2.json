@@ -1,0 +1,36 @@
+{
+  "id": "counter-strike-2",
+  "name": "Counter-Strike 2",
+  "game": "counter-strike-2",
+  "device_models": ["v2", "pro"],
+  "bindings": {
+    "kp01": { "type": "key", "key": "q", "modifiers": [] },
+    "kp02": { "type": "key", "key": "e", "modifiers": [] },
+    "kp03": { "type": "key", "key": "g", "modifiers": [] },
+    "kp04": { "type": "key", "key": "r", "modifiers": [] },
+    "kp05": { "type": "key", "key": "f", "modifiers": [] },
+    "kp06": { "type": "key", "key": "1", "modifiers": [] },
+    "kp07": { "type": "key", "key": "2", "modifiers": [] },
+    "kp08": { "type": "key", "key": "3", "modifiers": [] },
+    "kp09": { "type": "key", "key": "4", "modifiers": [] },
+    "kp10": { "type": "key", "key": "5", "modifiers": [] },
+    "kp11": { "type": "key", "key": "b", "modifiers": [] },
+    "kp12": { "type": "key", "key": "z", "modifiers": [] },
+    "kp13": { "type": "key", "key": "x", "modifiers": [] },
+    "kp14": { "type": "key", "key": "c", "modifiers": [] },
+    "kp15": { "type": "key", "key": "tab", "modifiers": [] },
+    "kp16": { "type": "key", "key": "enter", "modifiers": [] },
+    "kp17": { "type": "key", "key": "escape", "modifiers": [] },
+    "kp18": { "type": "key", "key": "m", "modifiers": [] },
+    "kp20": { "type": "key", "key": "space", "modifiers": [] },
+    "thumb_n": { "type": "key", "key": "w", "modifiers": [] },
+    "thumb_w": { "type": "key", "key": "a", "modifiers": [] },
+    "thumb_s": { "type": "key", "key": "s", "modifiers": [] },
+    "thumb_e": { "type": "key", "key": "d", "modifiers": [] }
+  },
+  "lighting": {
+    "effect": "static",
+    "brightness": 80,
+    "color": [222, 155, 53]
+  }
+}
