@@ -48,6 +48,9 @@ pub struct ProfileRow {
     pub name: String,
     pub is_active: bool,
     pub can_revert: bool,
+    /// The profile's lighting colour, resolved once when the list refreshes so
+    /// the sidebar never reads a file while drawing.
+    pub color: Option<[u8; 3]>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -841,6 +844,7 @@ impl App {
             .into_iter()
             .filter_map(|id| by_id.remove(&id))
             .map(|r| ProfileRow {
+                color: read_profile(&r.id).and_then(|profile| profile.lighting.color),
                 id: r.id,
                 name: r.name,
                 is_active: r.is_active,
@@ -1228,12 +1232,14 @@ mod tests {
                 name: "Default".into(),
                 is_active: false,
                 can_revert: false,
+                color: None,
             },
             ProfileRow {
                 id: "league-of-legends".into(),
                 name: "League of Legends".into(),
                 is_active: true,
                 can_revert: true,
+                color: None,
             },
         ];
         app.active_profile_id = Some("league-of-legends".into());
@@ -1356,5 +1362,49 @@ mod tests {
         assert_eq!(app.active_profile_name(), Some("League of Legends"));
         let empty = running_app();
         assert_eq!(empty.active_profile_name(), None);
+    }
+
+    #[test]
+    fn profile_rows_carry_the_shipped_lighting_colour() {
+        let mut app = running_app();
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::ListProfiles),
+            ok: true,
+            result: Some(json!({
+                "profiles": [
+                    { "id": "league-of-legends", "name": "League of Legends",
+                      "is_active": true, "can_revert": true },
+                    { "id": "default", "name": "Default",
+                      "is_active": false, "can_revert": false },
+                ]
+            })),
+            error: None,
+        });
+        let league = app
+            .profiles
+            .iter()
+            .find(|row| row.id == "league-of-legends")
+            .expect("league row");
+        assert_eq!(league.color, Some([0, 180, 255]));
+        let default = app.profiles.iter().find(|row| row.id == "default").unwrap();
+        assert_eq!(default.color, None, "the default profile has no colour");
+    }
+
+    #[test]
+    fn an_unknown_profile_id_gets_no_colour_and_does_not_panic() {
+        let mut app = running_app();
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::ListProfiles),
+            ok: true,
+            result: Some(json!({
+                "profiles": [
+                    { "id": "my-own-thing", "name": "My Own Thing",
+                      "is_active": false, "can_revert": false }
+                ]
+            })),
+            error: None,
+        });
+        assert_eq!(app.profiles.len(), 1);
+        assert_eq!(app.profiles[0].color, None);
     }
 }

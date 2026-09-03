@@ -1,6 +1,6 @@
 use crate::app::{App, Banner, Message};
-use crate::theme::{self, COLOR_DANGER, COLOR_SURFACE, COLOR_TEXT};
-use crate::view::widgets::danger_text_button;
+use crate::theme;
+use crate::view::widgets::primary_button;
 use iced::widget::{button, container, row, text, Space};
 use iced::{Background, Border, Element, Length, Theme};
 use opentartarus_core::error::ErrorCode;
@@ -26,26 +26,26 @@ pub fn banner_bar(app: &App) -> Element<'_, Message> {
         Banner::SignOut => (theme::BANNER_SIGN_OUT.to_string(), false),
         Banner::Other(msg) => (msg, false),
     };
-    let mut row = row![text(copy).size(14)]
-        .spacing(10)
+    let mut row = row![text(copy).size(theme::TEXT_BODY)]
+        .spacing(theme::SPACE_SM)
         .align_y(iced::Alignment::Center);
     if show_fix {
         row = row.push(
             button(text(theme::BUTTON_FIX_PERMISSIONS))
                 .on_press(Message::FixPermissions)
-                .style(danger_text_button),
+                .style(primary_button),
         );
     }
     container(row)
         .width(Length::Fill)
-        .padding(8)
+        .padding([theme::SPACE_SM, theme::SPACE_LG])
         .style(|_theme: &Theme| container::Style {
-            background: Some(Background::Color(COLOR_SURFACE)),
-            text_color: Some(COLOR_TEXT),
+            background: Some(Background::Color(theme::COLOR_SURFACE)),
+            text_color: Some(theme::COLOR_TEXT),
             border: Border {
-                color: COLOR_DANGER,
-                width: 1.0,
-                radius: 4.0.into(),
+                color: theme::COLOR_DANGER,
+                width: theme::BORDER_HAIRLINE,
+                radius: theme::RADIUS_CONTROL.into(),
             },
             ..container::Style::default()
         })

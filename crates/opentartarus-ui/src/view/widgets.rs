@@ -5,10 +5,10 @@ use iced::{Background, Border, Color, Element, Length, Theme};
 
 // This module is the shared style vocabulary Tasks 6-9 draw from. Every
 // function below is covered by the tests at the bottom of this file, but
-// `chip_button`, `row_button`, `section_label` and `swatch` have no caller
-// in the application yet: the screens that use them are built in later
-// tasks. `#[allow(dead_code)]` marks exactly those functions, so the lint
-// still catches a genuinely unused function added by mistake.
+// `chip_button` has no caller in the application yet: the screen that uses
+// it is built in a later task. `#[allow(dead_code)]` marks exactly that
+// function, so the lint still catches a genuinely unused function added by
+// mistake.
 
 /// A raised panel: the keypad card, the bind readout, the menu popup.
 pub fn card_container(_theme: &Theme) -> container::Style {
@@ -99,7 +99,6 @@ pub fn chip_button(_theme: &Theme, status: button::Status) -> button::Style {
 }
 
 /// An unselected sidebar row.
-#[allow(dead_code)]
 pub fn row_button(_theme: &Theme, status: button::Status) -> button::Style {
     control(
         Color::TRANSPARENT,
@@ -141,7 +140,6 @@ pub fn danger_text_button(_theme: &Theme, status: button::Status) -> button::Sty
 /// The small uppercase label above a group of controls.
 /// Takes an owned string so callers can pass a freshly built label, such as
 /// the brightness percentage, without fighting the borrow checker.
-#[allow(dead_code)]
 pub fn section_label<'a>(label: impl Into<String>) -> Element<'a, Message> {
     text(label.into().to_uppercase())
         .size(theme::TEXT_LABEL)
@@ -177,7 +175,6 @@ pub fn dot<'a>(color: Color) -> Element<'a, Message> {
 }
 
 /// A colour chip: the profile swatch, the lighting presets.
-#[allow(dead_code)]
 pub fn swatch<'a>(rgb: [u8; 3], size: f32) -> Element<'a, Message> {
     let color = Color::from_rgb8(rgb[0], rgb[1], rgb[2]);
     container(Space::new(Length::Fixed(size), Length::Fixed(size)))
