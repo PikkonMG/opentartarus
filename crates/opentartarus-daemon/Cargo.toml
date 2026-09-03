@@ -14,3 +14,4 @@ uuid = { version = "1", features = ["v4"] }
 evdev = { version = "0.13", features = ["tokio"] }
 ksni = { version = "0.3", features = ["tokio"] }
 zbus = { version = "5", features = ["tokio"] }
+png = "0.17"
