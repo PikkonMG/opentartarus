@@ -1,5 +1,7 @@
 # OpenTartarus
 
+**A Razer Synapse replacement for Linux. Key remapping, per-game profiles, macros and RGB lighting for the Razer Tartarus V2 and Tartarus Pro keypad.**
+
 A Linux app for the Razer Tartarus V2 (`1532:022b`) and Tartarus Pro (`1532:0244`). It remaps the keypad with per-game profiles, the way Razer Synapse does on Windows, and it drives the lighting through OpenRazer. If OpenRazer is not running it tries OpenRGB. With neither, remaps still work and the lighting controls stay off.
 
 Two processes make up the app. A tray daemon grabs the keypad, plays the remaps, and talks to lighting. A window, built with iced, edits profiles and shows the pad. Close the window and the daemon keeps remapping. Quit from the tray menu to stop it.
@@ -126,6 +128,21 @@ The last line is optional. Most desktops pick the file up on the next login.
   - `opentartarus-ui`: the iced window
   - `opentartarus-fix-permissions`: polkit helper that installs the udev rule
 - `packaging/`: udev rule, systemd user unit, polkit policy, desktop entry, login autostart, icons, the deb postinst and the release notes
+
+## If you searched for this
+
+People look for this tool under many names. Every one of these describes OpenTartarus:
+
+- Razer Synapse for Linux, Razer Synapse alternative, Synapse replacement
+- Razer Tartarus V2 Linux, Tartarus Pro Linux, Razer keypad Linux
+- Razer keypad remapper, keypad rebind, key remapping, macro editor
+- OpenRazer GUI, OpenRazer keypad support, OpenRazer profile manager
+- Razer RGB lighting on Linux, Chroma lighting without Windows
+- Per-game key profiles for Counter-Strike 2, Diablo 4, Elden Ring, Final Fantasy XIV,
+  Guild Wars 2, Minecraft, Overwatch 2, Path of Exile and World of Warcraft
+
+Not supported: the Razer Orbweaver, the Razer Nostromo and the first Tartarus. Only the
+Tartarus V2 (`1532:022b`) and the Tartarus Pro (`1532:0244`) are handled.
 
 ## License
 
