@@ -11,7 +11,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets
 ```
 
-Every test must pass. Clippy must not report anything new. The workspace carries a small number of pre-existing warnings, so compare against `main` rather than aiming for zero.
+Every test must pass. Clippy must not report anything new. The workspace carries a small number of pre-existing warnings, so compare against `main` rather than aiming for zero. The CI workflow runs both on every push and pull request, and fails if the warning count rises above the baseline in `.github/workflows/ci.yml`.
 
 If you have a Tartarus V2 and OpenRazer, the hardware test runs with `OPENTARTARUS_HW_TEST=1`. It is skipped otherwise.
 

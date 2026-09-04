@@ -1,0 +1,54 @@
+# Runs the tests and a lint check on every push and pull request to main.
+# The release workflow runs the same tests again before it publishes.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  # Warnings clippy already reports on a clean checkout. CI fails when the
+  # count rises above this, which catches new lint problems without asking
+  # anyone to fix the old ones first. A Rust release can add lints and move
+  # this number; when that happens, check the new warnings and update it.
+  CLIPPY_BASELINE: 22
+
+jobs:
+  test:
+    # The same runner the release uses, so a green CI means a green release.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup update stable
+          rustup default stable
+          rustup component add clippy
+
+      # Only the downloaded crates are cached, never target/. A restored
+      # target/ makes clippy skip crates it has already linted, which would
+      # hide new warnings and make the count below meaningless.
+      - name: Cache the crate downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Lint
+        run: |
+          count=$(cargo clippy --workspace --all-targets 2>&1 | grep -c '^warning: ' || true)
+          echo "clippy warnings: $count (baseline ${{ env.CLIPPY_BASELINE }})"
+          if [ "$count" -gt "${{ env.CLIPPY_BASELINE }}" ]; then
+            echo "::error::clippy reports $count warnings, above the baseline of ${{ env.CLIPPY_BASELINE }}"
+            cargo clippy --workspace --all-targets 2>&1 | grep -A 3 '^warning: '
+            exit 1
+          fi
