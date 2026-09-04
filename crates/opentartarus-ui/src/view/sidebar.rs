@@ -147,7 +147,7 @@ mod tests {
 
     #[test]
     fn only_custom_rows_offer_delete_and_only_shipped_rows_offer_revert() {
-        let mut shipped = row("league-of-legends", true, None);
+        let mut shipped = row("dota-2", true, None);
         shipped.can_revert = true;
         assert!(!row_is_deletable(&shipped), "a shipped profile is never deletable");
 
@@ -176,7 +176,7 @@ mod tests {
             ..App::default()
         };
 
-        let active = row("league-of-legends", true, None);
+        let active = row("dota-2", true, None);
         assert!(row_is_selected(&app, &active), "the applied profile is selected");
 
         let other = row("dota-2", false, None);

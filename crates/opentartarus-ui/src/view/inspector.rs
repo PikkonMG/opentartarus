@@ -85,6 +85,22 @@ fn switch_readout(action: Option<&Action>, profiles: &[ProfileRow]) -> Option<St
     }
 }
 
+/// Whether the selected binding sends more than one action per press. Those
+/// are the bindings most games' rules forbid, so the panel says so.
+pub fn automates_input(action: Option<&Action>) -> bool {
+    matches!(
+        action,
+        Some(Action::Macro { .. }) | Some(Action::HoldRepeat { .. })
+    )
+}
+
+fn automation_warning<'a>() -> Element<'a, Message> {
+    text(theme::AUTOMATION_WARNING)
+        .size(theme::TEXT_SMALL)
+        .color(theme::COLOR_DANGER)
+        .into()
+}
+
 /// Only a plain key can repeat. A hold-repeat that already wraps something
 /// else reads as on, but the toggle stays dead so the user cannot make it
 /// worse.
@@ -328,6 +344,9 @@ pub fn inspector(app: &App) -> Element<'_, Message> {
             if let Some(macro_action @ Action::Macro { .. }) = &action {
                 panel = panel.push(macro_steps(macro_action));
             }
+            if automates_input(action.as_ref()) {
+                panel = panel.push(automation_warning());
+            }
 
             // `Clear this binding` sits below the scroll area, not inside it.
             // iced panics outright if a scrollable's content fills the axis it
@@ -431,6 +450,18 @@ mod tests {
         labels.sort_unstable();
         labels.dedup();
         assert_eq!(labels.len(), HELD_KEYS.len());
+    }
+
+    #[test]
+    fn only_macros_and_hold_repeat_count_as_automation() {
+        assert!(automates_input(Some(&Action::Macro { steps: Vec::new() })));
+        assert!(automates_input(Some(&Action::HoldRepeat {
+            inner: Box::new(key(KeyToken::Q)),
+            rate_ms: 40,
+        })));
+        assert!(!automates_input(Some(&key(KeyToken::Q))));
+        assert!(!automates_input(Some(&Action::NextProfile)));
+        assert!(!automates_input(None));
     }
 
     #[test]

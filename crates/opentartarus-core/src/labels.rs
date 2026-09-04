@@ -300,7 +300,7 @@ mod tests {
     fn switch_labels_are_short_enough_for_a_keycap() {
         assert_eq!(
             bind_label(Some(&Action::SwitchProfile {
-                profile: "league-of-legends".into()
+                profile: "dota-2".into()
             })),
             "Profile"
         );
@@ -312,11 +312,11 @@ mod tests {
         let ids = vec![
             "path-of-exile".into(),
             "default".into(),
-            "league-of-legends".into(),
+            "dota-2".into(),
         ];
         assert_eq!(
             profile_row_order(&ids),
-            vec!["default", "league-of-legends", "path-of-exile"]
+            vec!["default", "dota-2", "path-of-exile"]
         );
         assert_eq!(SHIPPED_IDS[0], "default");
     }

@@ -335,14 +335,14 @@ mod tests {
         let mut clock = ApplyDuringSleep {
             state: Arc::clone(&state),
             epoch: Arc::clone(&epoch),
-            apply_id: "league-of-legends",
+            apply_id: "dota-2",
             method: Method::ApplyProfile,
             ok: true,
             did: AtomicBool::new(false),
         };
         remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut clock);
         let mut st = state.lock().expect("daemon state");
-        assert_eq!(st.active_id.as_deref(), Some("league-of-legends"));
+        assert_eq!(st.active_id.as_deref(), Some("dota-2"));
         let codes = probe_codes(&mut st.engine, KP02_NATIVE_CODE);
         assert_eq!(
             codes,
@@ -432,7 +432,7 @@ mod tests {
         handle_request(
             &mut held,
             Method::ApplyProfile,
-            json!({ "id": "league-of-legends" }),
+            json!({ "id": "dota-2" }),
             0,
         )
         .unwrap();
@@ -440,7 +440,7 @@ mod tests {
         drop(held);
         worker.join().expect("remap worker");
         let mut st = state.lock().expect("daemon state");
-        assert_eq!(st.active_id.as_deref(), Some("league-of-legends"));
+        assert_eq!(st.active_id.as_deref(), Some("dota-2"));
         let codes = probe_codes(&mut st.engine, KP02_NATIVE_CODE);
         assert_eq!(
             codes,
@@ -470,14 +470,14 @@ mod tests {
     #[test]
     fn a_switch_key_makes_the_profile_live_and_bumps_the_epoch() {
         let mut st = state();
-        bind_kp01_switch(&mut st, "league-of-legends");
+        bind_kp01_switch(&mut st, "dota-2");
         let state = Arc::new(Mutex::new(st));
         let sink = Arc::new(Mutex::new(None));
         let epoch = EngineEpoch::new();
         let applied = remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut NoSleep);
-        assert_eq!(applied, Some(Ok("league-of-legends".to_owned())));
+        assert_eq!(applied, Some(Ok("dota-2".to_owned())));
         let mut st = state.lock().expect("daemon state");
-        assert_eq!(st.active_id.as_deref(), Some("league-of-legends"));
+        assert_eq!(st.active_id.as_deref(), Some("dota-2"));
         assert_eq!(epoch.load(), 1, "the engine changed, so in-flight takers must not restore");
         let codes = probe_codes(&mut st.engine, KP02_NATIVE_CODE);
         assert_eq!(

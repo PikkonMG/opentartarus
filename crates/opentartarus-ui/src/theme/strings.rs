@@ -70,3 +70,4 @@ pub const LABEL_HELD_KEYS: &str = "Held keys";
 pub const HELD_SHIFT: &str = "Shift";
 pub const HELD_CTRL: &str = "Ctrl";
 pub const HELD_ALT: &str = "Alt";
+pub const AUTOMATION_WARNING: &str = "Many games ban more than one action per key press. Check the game's rules before using this in play.";

@@ -1,18 +1,14 @@
 use crate::error::ErrorCode;
 use crate::types::Profile;
 
-pub const SHIPPED_IDS: [&str; 16] = [
+pub const SHIPPED_IDS: [&str; 12] = [
     "default",
-    "league-of-legends",
     "dota-2",
     "world-of-warcraft",
     "final-fantasy-xiv",
     "path-of-exile",
     "overwatch-2",
-    "valorant",
     "counter-strike-2",
-    "apex-legends",
-    "fortnite",
     "diablo-4",
     "elden-ring",
     "guild-wars-2",
@@ -23,16 +19,12 @@ pub const SHIPPED_IDS: [&str; 16] = [
 pub fn shipped_json(id: &str) -> Option<&'static str> {
     match id {
         "default" => Some(include_str!("../profiles/default.json")),
-        "league-of-legends" => Some(include_str!("../profiles/league-of-legends.json")),
         "dota-2" => Some(include_str!("../profiles/dota-2.json")),
         "world-of-warcraft" => Some(include_str!("../profiles/world-of-warcraft.json")),
         "final-fantasy-xiv" => Some(include_str!("../profiles/final-fantasy-xiv.json")),
         "path-of-exile" => Some(include_str!("../profiles/path-of-exile.json")),
         "overwatch-2" => Some(include_str!("../profiles/overwatch-2.json")),
-        "valorant" => Some(include_str!("../profiles/valorant.json")),
         "counter-strike-2" => Some(include_str!("../profiles/counter-strike-2.json")),
-        "apex-legends" => Some(include_str!("../profiles/apex-legends.json")),
-        "fortnite" => Some(include_str!("../profiles/fortnite.json")),
         "diablo-4" => Some(include_str!("../profiles/diablo-4.json")),
         "elden-ring" => Some(include_str!("../profiles/elden-ring.json")),
         "guild-wars-2" => Some(include_str!("../profiles/guild-wars-2.json")),
@@ -85,13 +77,10 @@ mod tests {
         (KeyId::ThumbE, KeyToken::D),
     ];
 
-    const NEW_GAME_IDS: [&str; 10] = [
+    const NEW_GAME_IDS: [&str; 7] = [
         "overwatch-2",
-        "valorant",
-        "counter-strike-2",
-        "apex-legends",
-        "fortnite",
-        "diablo-4",
+            "counter-strike-2",
+                "diablo-4",
         "elden-ring",
         "guild-wars-2",
         "elder-scrolls-online",
@@ -119,19 +108,18 @@ mod tests {
 
     #[test]
     fn shipped_ids_are_pack_order() {
-        assert_eq!(SHIPPED_IDS.len(), 16);
+        assert_eq!(SHIPPED_IDS.len(), 12);
         assert_eq!(SHIPPED_IDS[0], "default");
         assert_eq!(
-            &SHIPPED_IDS[1..6],
+            &SHIPPED_IDS[1..5],
             &[
-                "league-of-legends",
                 "dota-2",
                 "world-of-warcraft",
                 "final-fantasy-xiv",
                 "path-of-exile"
             ]
         );
-        assert_eq!(&SHIPPED_IDS[6..], &NEW_GAME_IDS);
+        assert_eq!(&SHIPPED_IDS[5..], &NEW_GAME_IDS);
     }
 
     #[test]
@@ -176,38 +164,6 @@ mod tests {
             (KeyId::ThumbW, KeyToken::Left),
             (KeyId::ThumbS, KeyToken::Down),
             (KeyId::ThumbE, KeyToken::Right),
-            ],
-        );
-    }
-
-    #[test]
-    fn league_bindings_match_spec() {
-        let p = shipped_profile("league-of-legends").unwrap();
-        assert_eq!(p.game, GameId::LeagueOfLegends);
-        assert_eq!(p.lighting.color, Some([0, 180, 255]));
-        assert_key_bindings(
-            &p,
-            &[
-            (KeyId::Kp01, KeyToken::Q),
-            (KeyId::Kp02, KeyToken::W),
-            (KeyId::Kp03, KeyToken::E),
-            (KeyId::Kp04, KeyToken::R),
-            (KeyId::Kp05, KeyToken::D),
-            (KeyId::Kp06, KeyToken::F),
-            (KeyId::Kp07, KeyToken::Num1),
-            (KeyId::Kp08, KeyToken::Num2),
-            (KeyId::Kp09, KeyToken::Num3),
-            (KeyId::Kp10, KeyToken::Num4),
-            (KeyId::Kp11, KeyToken::Num5),
-            (KeyId::Kp12, KeyToken::Num6),
-            (KeyId::Kp13, KeyToken::B),
-            (KeyId::Kp14, KeyToken::P),
-            (KeyId::Kp15, KeyToken::Tab),
-            (KeyId::Kp16, KeyToken::Space),
-            (KeyId::Kp17, KeyToken::Y),
-            (KeyId::Kp18, KeyToken::Num7),
-            (KeyId::Kp19, KeyToken::A),
-            (KeyId::Kp20, KeyToken::S),
             ],
         );
     }
@@ -370,37 +326,6 @@ mod tests {
     }
 
     #[test]
-    fn valorant_bindings_match_spec() {
-        let p = shipped_profile("valorant").unwrap();
-        assert_eq!(p.game, GameId::Valorant);
-        assert_eq!(p.lighting.color, Some([255, 70, 85]));
-        let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Num1),
-            (KeyId::Kp02, KeyToken::Num2),
-            (KeyId::Kp03, KeyToken::Num3),
-            (KeyId::Kp04, KeyToken::Num4),
-            (KeyId::Kp05, KeyToken::Tab),
-            (KeyId::Kp06, KeyToken::Q),
-            (KeyId::Kp07, KeyToken::E),
-            (KeyId::Kp08, KeyToken::C),
-            (KeyId::Kp09, KeyToken::X),
-            (KeyId::Kp10, KeyToken::R),
-            (KeyId::Kp11, KeyToken::F),
-            (KeyId::Kp12, KeyToken::LeftCtrl),
-            (KeyId::Kp13, KeyToken::LeftShift),
-            (KeyId::Kp14, KeyToken::Z),
-            (KeyId::Kp15, KeyToken::G),
-            (KeyId::Kp16, KeyToken::B),
-            (KeyId::Kp17, KeyToken::M),
-            (KeyId::Kp18, KeyToken::Enter),
-            (KeyId::Kp19, KeyToken::Escape),
-            (KeyId::Kp20, KeyToken::Space),
-        ];
-        expected.extend(WASD_THUMBS);
-        assert_key_bindings(&p, &expected);
-    }
-
-    #[test]
     fn counter_strike_bindings_match_spec() {
         let p = shipped_profile("counter-strike-2").unwrap();
         assert_eq!(p.game, GameId::CounterStrike2);
@@ -425,68 +350,6 @@ mod tests {
             (KeyId::Kp17, KeyToken::Escape),
             (KeyId::Kp18, KeyToken::M),
             (KeyId::Kp19, KeyToken::C),
-            (KeyId::Kp20, KeyToken::Space),
-        ];
-        expected.extend(WASD_THUMBS);
-        assert_key_bindings(&p, &expected);
-    }
-
-    #[test]
-    fn apex_bindings_match_spec() {
-        let p = shipped_profile("apex-legends").unwrap();
-        assert_eq!(p.game, GameId::ApexLegends);
-        assert_eq!(p.lighting.color, Some([218, 41, 46]));
-        let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Tab),
-            (KeyId::Kp02, KeyToken::M),
-            (KeyId::Kp03, KeyToken::Z),
-            (KeyId::Kp04, KeyToken::V),
-            (KeyId::Kp05, KeyToken::X),
-            (KeyId::Kp06, KeyToken::Num1),
-            (KeyId::Kp07, KeyToken::Num2),
-            (KeyId::Kp08, KeyToken::Num3),
-            (KeyId::Kp09, KeyToken::Num4),
-            (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::Q),
-            (KeyId::Kp12, KeyToken::E),
-            (KeyId::Kp13, KeyToken::R),
-            (KeyId::Kp14, KeyToken::C),
-            (KeyId::Kp15, KeyToken::G),
-            (KeyId::Kp16, KeyToken::Enter),
-            (KeyId::Kp17, KeyToken::Escape),
-            (KeyId::Kp18, KeyToken::F),
-            (KeyId::Kp19, KeyToken::LeftShift),
-            (KeyId::Kp20, KeyToken::Space),
-        ];
-        expected.extend(WASD_THUMBS);
-        assert_key_bindings(&p, &expected);
-    }
-
-    #[test]
-    fn fortnite_bindings_match_spec() {
-        let p = shipped_profile("fortnite").unwrap();
-        assert_eq!(p.game, GameId::Fortnite);
-        assert_eq!(p.lighting.color, Some([70, 145, 245]));
-        let mut expected = vec![
-            (KeyId::Kp01, KeyToken::F),
-            (KeyId::Kp02, KeyToken::R),
-            (KeyId::Kp03, KeyToken::E),
-            (KeyId::Kp04, KeyToken::Tab),
-            (KeyId::Kp05, KeyToken::M),
-            (KeyId::Kp06, KeyToken::Num1),
-            (KeyId::Kp07, KeyToken::Num2),
-            (KeyId::Kp08, KeyToken::Num3),
-            (KeyId::Kp09, KeyToken::Num4),
-            (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::Z),
-            (KeyId::Kp12, KeyToken::X),
-            (KeyId::Kp13, KeyToken::C),
-            (KeyId::Kp14, KeyToken::V),
-            (KeyId::Kp15, KeyToken::G),
-            (KeyId::Kp16, KeyToken::Enter),
-            (KeyId::Kp17, KeyToken::Escape),
-            (KeyId::Kp18, KeyToken::LeftShift),
-            (KeyId::Kp19, KeyToken::LeftCtrl),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
@@ -657,7 +520,7 @@ mod tests {
         let noted = shipped_profile(with_note[0]).unwrap();
         let json = serde_json::to_value(&noted).unwrap();
         assert!(json.get("setup_note").is_some(), "a note survives a save");
-        let plain = shipped_profile("league-of-legends").unwrap();
+        let plain = shipped_profile("dota-2").unwrap();
         let json = serde_json::to_value(&plain).unwrap();
         assert!(json.get("setup_note").is_none(), "no note, no field written");
     }
@@ -696,6 +559,30 @@ mod tests {
                 assert!(
                     !p.bindings.contains_key(&key_id),
                     "{id} must leave {key_id:?} free"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn no_shipped_profile_automates_input() {
+        // Most publishers allow rebinding but ban "one press, many actions":
+        // macros and auto-repeat. What ships must never cross that line, so
+        // a player who only uses the stock profiles is always inside the
+        // rules. A player who builds a macro does so knowingly, and the
+        // window warns them.
+        for id in SHIPPED_IDS {
+            let p = shipped_profile(id).unwrap();
+            for (key_id, action) in &p.bindings {
+                assert!(
+                    matches!(
+                        action,
+                        Action::Key { .. }
+                            | Action::Mouse { .. }
+                            | Action::SwitchProfile { .. }
+                            | Action::NextProfile
+                    ),
+                    "{id} {key_id:?} sends more than one action per press: {action:?}"
                 );
             }
         }

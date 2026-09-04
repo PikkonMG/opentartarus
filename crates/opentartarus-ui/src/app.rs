@@ -1450,15 +1450,15 @@ mod tests {
                 color: None,
             },
             ProfileRow {
-                id: "league-of-legends".into(),
-                name: "League of Legends".into(),
+                id: "dota-2".into(),
+                name: "Dota 2".into(),
                 is_active: true,
                 can_revert: true,
                 can_delete: false,
                 color: None,
             },
         ];
-        app.active_profile_id = Some("league-of-legends".into());
+        app.active_profile_id = Some("dota-2".into());
         app
     }
 
@@ -1548,7 +1548,7 @@ mod tests {
         let mut app = app_with_profiles();
         assert_eq!(
             app.status_line(),
-            format!("League of Legends{}", theme::STATUS_APPLIED_SUFFIX)
+            format!("Dota 2{}", theme::STATUS_APPLIED_SUFFIX)
         );
 
         app.active_profile_id = None;
@@ -1575,7 +1575,7 @@ mod tests {
     #[test]
     fn active_profile_name_reads_the_row_not_the_id() {
         let app = app_with_profiles();
-        assert_eq!(app.active_profile_name(), Some("League of Legends"));
+        assert_eq!(app.active_profile_name(), Some("Dota 2"));
         let empty = running_app();
         assert_eq!(empty.active_profile_name(), None);
     }
@@ -1589,8 +1589,8 @@ mod tests {
             default.lighting.color, None,
             "the shipped default profile has no colour"
         );
-        let league = pack::shipped_profile("league-of-legends").unwrap();
-        assert_eq!(league.lighting.color, Some([0, 180, 255]));
+        let dota = pack::shipped_profile("dota-2").unwrap();
+        assert_eq!(dota.lighting.color, Some([200, 40, 40]));
 
         let mut colours: Vec<[u8; 3]> = pack::SHIPPED_IDS
             .iter()
@@ -1639,7 +1639,7 @@ mod tests {
         assert_eq!(outgoing.method, Method::CreateProfile);
         assert_eq!(outgoing.params["name"], "My Raid", "name is trimmed");
         assert_eq!(
-            outgoing.params["copy_from"], "league-of-legends",
+            outgoing.params["copy_from"], "dota-2",
             "copies whatever is active"
         );
         assert_eq!(app.new_profile_name, None, "the box closes on submit");
@@ -1766,7 +1766,7 @@ mod tests {
             ok: true,
             result: Some(json!({
                 "profiles": [
-                    { "id": "league-of-legends", "name": "League of Legends",
+                    { "id": "dota-2", "name": "Dota 2",
                       "is_active": true, "can_revert": true },
                     { "id": "default", "name": "Default",
                       "is_active": false, "can_revert": false },
@@ -1840,7 +1840,7 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect();
-        assert_eq!(names, vec!["Default", "League of Legends"]);
+        assert_eq!(names, vec!["Default", "Dota 2"]);
     }
 
     #[test]

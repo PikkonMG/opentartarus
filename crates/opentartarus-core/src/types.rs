@@ -413,6 +413,8 @@ pub struct Lighting {
 #[serde(rename_all = "kebab-case")]
 pub enum GameId {
     Default,
+    /// Games the pack no longer ships a profile for. The variants stay so a
+    /// copy saved by an earlier version still loads, as a custom profile.
     LeagueOfLegends,
     #[serde(rename = "dota-2")]
     Dota2,

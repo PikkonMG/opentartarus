@@ -512,21 +512,21 @@ mod tests {
         let v = handle_request(
             &mut st,
             Method::ApplyProfile,
-            json!({"id":"league-of-legends"}),
+            json!({"id":"dota-2"}),
             0,
         )
         .unwrap();
-        assert_eq!(v["id"], "league-of-legends");
-        assert_eq!(st.active_id.as_deref(), Some("league-of-legends"));
+        assert_eq!(v["id"], "dota-2");
+        assert_eq!(st.active_id.as_deref(), Some("dota-2"));
         handle_request(
             &mut st,
             Method::SetBinding,
-            json!({"profile_id":"league-of-legends","key_id":"kp01","action":{"type":"key","key":"c","modifiers":["ctrl"]}}),
+            json!({"profile_id":"dota-2","key_id":"kp01","action":{"type":"key","key":"c","modifiers":["ctrl"]}}),
             1,
         )
         .unwrap();
         let s = handle_request(&mut st, Method::GetStatus, json!({}), 2).unwrap();
-        assert_eq!(s["active_profile_id"], "league-of-legends");
+        assert_eq!(s["active_profile_id"], "dota-2");
         assert_eq!(s["device"]["model"], "v2");
     }
 
@@ -600,18 +600,18 @@ mod tests {
     #[test]
     fn create_copies_the_active_profile_under_a_new_name_and_activates_it() {
         let mut st = state();
-        handle_request(&mut st, Method::ApplyProfile, json!({"id": "league-of-legends"}), 0)
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": "dota-2"}), 0)
             .unwrap();
         let id = create(&mut st, "My Raid Layout");
         assert_eq!(id, "my-raid-layout");
         assert_eq!(st.active_id.as_deref(), Some("my-raid-layout"));
 
         let mine = read_user_profile(&st.paths, &id).unwrap();
-        let league = shipped_profile("league-of-legends").unwrap();
+        let dota = shipped_profile("dota-2").unwrap();
         assert_eq!(mine.name, "My Raid Layout");
         assert_eq!(mine.game, GameId::Custom);
-        assert_eq!(mine.bindings, league.bindings, "starts as a copy of the source");
-        assert_eq!(mine.lighting, league.lighting);
+        assert_eq!(mine.bindings, dota.bindings, "starts as a copy of the source");
+        assert_eq!(mine.lighting, dota.lighting);
     }
 
     #[test]
@@ -764,7 +764,7 @@ mod tests {
         let err = handle_request(
             &mut st,
             Method::SetBinding,
-            json!({"profile_id":"league-of-legends","key_id":"kp99","action":{"type":"key","key":"c","modifiers":[]}}),
+            json!({"profile_id":"dota-2","key_id":"kp99","action":{"type":"key","key":"c","modifiers":[]}}),
             0,
         )
         .unwrap_err();

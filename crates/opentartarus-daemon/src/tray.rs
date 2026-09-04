@@ -243,11 +243,11 @@ mod tests {
     #[test]
     fn tooltip_follows_any_profile_applied_id() {
         let name = tray_name_from_applied_params(&serde_json::json!({
-            "id": "league-of-legends"
+            "id": "dota-2"
         }))
         .unwrap();
-        assert_eq!(name, "League of Legends");
-        assert_eq!(tray_tooltip(&name), "OpenTartarus — League of Legends");
+        assert_eq!(name, "Dota 2");
+        assert_eq!(tray_tooltip(&name), "OpenTartarus — Dota 2");
         assert_eq!(
             tray_name_from_applied_params(&serde_json::json!({ "id": "default" })).as_deref(),
             Some("Default")
