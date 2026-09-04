@@ -92,6 +92,10 @@ pub const TEXT_HEADING: f32 = 14.0;
 pub const TEXT_BODY: f32 = 13.0;
 pub const TEXT_SMALL: f32 = 12.0;
 pub const TEXT_LABEL: f32 = 10.5;
+/// Chip labels use a tight line box so the glyphs sit centred in the cap.
+/// iced's default of 1.3 puts all the extra leading below the baseline,
+/// which reads as text riding high.
+pub const LINE_HEIGHT_TIGHT: f32 = 1.0;
 pub const BIND_VALUE_TEXT: f32 = 22.0;
 
 // Small fixed element sizes.

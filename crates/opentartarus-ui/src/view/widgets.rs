@@ -1,6 +1,7 @@
 use crate::app::{Message, Tab};
 use crate::theme;
-use iced::widget::{button, container, text, Space};
+use iced::overlay::menu;
+use iced::widget::{button, container, pick_list, text, Space};
 use iced::border::Radius;
 use iced::{Background, Border, Color, Element, Length, Shadow, Theme, Vector};
 
@@ -173,15 +174,67 @@ pub fn quiet_button(_theme: &Theme, status: button::Status) -> button::Style {
     )
 }
 
-/// A small rounded pill, used for the mouse targets.
+/// A small cap, used for the mouse targets and the profile switch. It has
+/// the same corner as every other control: a pill's long curve turned the
+/// hairline edge into a dotted line.
 pub fn chip_button(_theme: &Theme, status: button::Status) -> button::Style {
     keycap(
         theme::COLOR_KEY,
         theme::COLOR_KEY_HOVER,
         theme::COLOR_TEXT,
-        theme::RADIUS_PILL,
+        theme::RADIUS_CONTROL,
         status,
     )
+}
+
+/// A chip: a small cap with a short label. Built here so every chip gets
+/// the same tight line box, which is what keeps the label centred.
+pub fn chip<'a>(label: &'a str, message: Message) -> iced::widget::Button<'a, Message> {
+    button(
+        text(label)
+            .size(theme::TEXT_SMALL)
+            .line_height(theme::LINE_HEIGHT_TIGHT),
+    )
+    .padding([theme::SPACE_XS, theme::SPACE_MD])
+    .on_press(message)
+    .style(chip_button)
+}
+
+/// The drop-down, in the same material as a resting cap. iced's stock style
+/// is light grey, which would be the one thing in the window not built from
+/// the app's own material.
+pub fn pick_list_style(_theme: &Theme, status: pick_list::Status) -> pick_list::Style {
+    let fill = match status {
+        pick_list::Status::Active => theme::COLOR_KEY,
+        pick_list::Status::Hovered | pick_list::Status::Opened => theme::COLOR_KEY_HOVER,
+    };
+    pick_list::Style {
+        text_color: theme::COLOR_TEXT,
+        placeholder_color: theme::COLOR_TEXT_FAINT,
+        handle_color: theme::COLOR_TEXT_DIM,
+        background: Background::Color(fill),
+        border: Border {
+            color: theme::COLOR_CAP_EDGE,
+            width: theme::BORDER_HAIRLINE,
+            radius: theme::RADIUS_CONTROL.into(),
+        },
+    }
+}
+
+/// The drop-down's open list: a raised panel, with the chosen row in the
+/// soft accent the sidebar uses for its selected row.
+pub fn menu_style(_theme: &Theme) -> menu::Style {
+    menu::Style {
+        background: Background::Color(theme::COLOR_RAISED),
+        border: Border {
+            color: theme::COLOR_LINE,
+            width: theme::BORDER_HAIRLINE,
+            radius: theme::RADIUS_CONTROL.into(),
+        },
+        text_color: theme::COLOR_TEXT,
+        selected_text_color: theme::COLOR_TEXT,
+        selected_background: Background::Color(theme::COLOR_ACCENT_SOFT),
+    }
 }
 
 /// An unselected sidebar row.
@@ -587,5 +640,32 @@ mod tests {
         assert_eq!(idle.background, Some(Background::Color(Color::TRANSPARENT)));
         assert_eq!(active.text_color, theme::COLOR_TEXT);
         assert_eq!(idle.text_color, theme::COLOR_TEXT_DIM);
+    }
+
+    #[test]
+    fn chips_are_small_caps_not_pills() {
+        let theme = theme::theme();
+        let chip = chip_button(&theme, button::Status::Active);
+        let control = quiet_button(&theme, button::Status::Active);
+        assert_eq!(
+            chip.border.radius, control.border.radius,
+            "a pill's long curve turns the hairline edge dotted"
+        );
+    }
+
+    #[test]
+    fn the_drop_down_and_its_menu_are_built_from_the_dark_material() {
+        let theme = theme::theme();
+        let rest = pick_list_style(&theme, pick_list::Status::Active);
+        assert_eq!(rest.background, Background::Color(theme::COLOR_KEY));
+        assert_eq!(rest.text_color, theme::COLOR_TEXT);
+        let open = pick_list_style(&theme, pick_list::Status::Opened);
+        assert_ne!(rest.background, open.background, "opening must be visible");
+        let list = menu_style(&theme);
+        assert_eq!(list.background, Background::Color(theme::COLOR_RAISED));
+        assert_eq!(
+            list.selected_background,
+            Background::Color(theme::COLOR_ACCENT_SOFT)
+        );
     }
 }

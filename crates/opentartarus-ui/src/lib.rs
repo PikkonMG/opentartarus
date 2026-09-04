@@ -26,6 +26,9 @@ pub fn run() -> iced::Result {
     iced::application(theme::APP_TITLE, App::update, App::view)
         .subscription(App::subscription)
         .theme(App::theme)
+        // The keypad is drawn on a canvas. Without this its rounded caps come
+        // out stair-stepped: iced only multisamples canvas geometry when asked.
+        .antialiasing(true)
         .style(|_state, _theme| iced::application::Appearance {
             // The window paints nothing itself. `view` draws a rounded panel
             // instead, and the corners outside it stay clear, which is what
