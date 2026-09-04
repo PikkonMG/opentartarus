@@ -1,33 +1,44 @@
 # OpenTartarus
 
-Linux app for the Razer Tartarus V2 (`1532:022b`) and Tartarus Pro (`1532:0244`). It uses Synapse-like profiles and key remaps. Lighting is a thin OpenRazer passthrough. If that daemon is down, it can use OpenRGB. Without either, remaps still work and lighting controls stay off.
+A Linux app for the Razer Tartarus V2 (`1532:022b`) and Tartarus Pro (`1532:0244`). It remaps the keypad with per-game profiles, the way Razer Synapse does on Windows, and it drives the lighting through OpenRazer. If OpenRazer is not running it tries OpenRGB. With neither, remaps still work and the lighting controls stay off.
 
-The remap process is a tray daemon. The UI is iced. Close the window and it hides; remaps keep running until you quit from the tray.
+Two processes make up the app. A tray daemon grabs the keypad, plays the remaps, and talks to lighting. A window, built with iced, edits profiles and shows the pad. Close the window and the daemon keeps remapping. Quit from the tray menu to stop it.
 
 Source: https://github.com/PikkonMG/opentartarus
 
 ## What you need
 
-- Linux
+- Linux, on X11 or Wayland
 - A Tartarus V2 or Tartarus Pro
 - Rust, to build from this tree
-- OpenRazer, if you want lighting (keys still work without it). Polychromatic and RazerGenie are frontends for that daemon, not a second driver.
+- OpenRazer, if you want lighting. Keys work without it.
 
-## Lighting and other Razer apps
+Polychromatic and RazerGenie are frontends for `openrazer-daemon`, not a second driver. You can keep them open. OpenTartarus uses the same daemon on the session bus name `org.razer`, and the same `razerkbd` sysfs nodes. Remaps stay in OpenTartarus.
 
-Polychromatic and RazerGenie talk to `openrazer-daemon` on the session bus name `org.razer`. They are frontends. You still install OpenRazer for lighting. Those apps do not replace the daemon or the `razerkbd` driver.
+## What it does
 
-OpenTartarus uses that same daemon, and the Tartarus V2 (`1532:022b`) / Tartarus Pro (`1532:0244`) sysfs nodes under `razerkbd`. You can keep Polychromatic or RazerGenie open. Remaps stay in OpenTartarus.
+The pad is drawn in the window. Click a key to change what it sends. A key can send:
 
-If OpenRazer is not running, lighting can use OpenRGB. OpenRGB supports the Tartarus V2 (`1532:022b`).
+- a key, with or without Ctrl, Shift, Alt or Super
+- a bare Shift, Ctrl or Alt, for sprint, crouch and walk
+- a mouse button or wheel step
+- a macro, a list of key steps with delays
+- the same key over and over while held
+- a jump to one profile, or a step to the next one, so the pad can switch its own profile
+
+To set a key, press "Record a key" and then press the key you want on your keyboard or on the pad. You can also type a combo into the box, or click one of the chips.
+
+Sixteen profiles ship with the app. Default is Razer's own layout: the left of a keyboard, with 1 to 5 on the top row, Tab Q W E R under that, Caps A S D F on the rest row, Shift Z X C at the bottom, Space on the thumb key and the arrow keys on the thumb pad. Any game's own key settings work with it as is.
+
+The other fifteen are built from each game's default PC bindings: Apex Legends, Counter-Strike 2, Diablo 4, Dota 2, Elden Ring, Elder Scrolls Online, Final Fantasy XIV, Fortnite, Guild Wars 2, League of Legends, Minecraft, Overwatch 2, Path of Exile, Valorant and World of Warcraft. Games that move with WASD put movement on the thumb pad and the most used actions on the rest row. Two profiles need a step inside the game first. Diablo 4 needs its Keyboard Movement preset switched on. Elden Ring uses the layout the game shipped with, and a save made after patch 1.12 has Jump and Dodge on different keys. The window shows that note when the profile is active and no key is selected.
+
+You can make your own profiles. "+ New profile" at the bottom of the list copies whatever is selected under a new name. Custom profiles get a delete button. Shipped profiles cannot be deleted, but any edit to one can be undone with "Revert to shipped".
+
+The first time you apply a shipped profile the app copies it into `~/.config/opentartarus/profiles/`. Edits go to that copy. The copy is never refreshed on its own, so if a later version of the app ships a better layout for a game, press "Revert to shipped" to pick it up.
 
 ## How to build and run
 
-The tray daemon is the process that remaps keys and talks to lighting. The window connects to `$XDG_RUNTIME_DIR/opentartarus/daemon.sock`.
-
-Daily use: start the daemon. It owns the tray. Open the window when you want the keypad UI.
-
-From this checkout, start the daemon:
+Start the daemon. It owns the tray icon.
 
 ```
 cargo run -p opentartarus-daemon
@@ -39,17 +50,13 @@ Then open the window:
 cargo run -p opentartarus-ui
 ```
 
-The window will also start the daemon if nothing is listening on that socket. It looks next to the UI binary, then at Cargo’s `CARGO_BIN_EXE_opentartarus_daemon` / `CARGO_TARGET_DIR` / `target/debug` and `target/release`. Build the daemon crate at least once so that binary exists. The names are not on PATH until you install them.
+The window connects to `$XDG_RUNTIME_DIR/opentartarus/daemon.sock`. If nothing is listening there it starts the daemon itself. It looks next to its own binary, then in Cargo's `CARGO_BIN_EXE_opentartarus_daemon`, `CARGO_TARGET_DIR`, `target/debug` and `target/release`. Build the daemon crate at least once so that binary exists. Neither name is on PATH until you install them.
 
-If the window cannot start the tray, the red banner names the missing program, a permission error, or the socket path. That is not an OpenRazer message. Lighting copy only appears after the window is talking to the daemon.
+If the window cannot start the daemon, the red banner names the missing program, the permission error, or the socket path. That message is not about OpenRazer. Lighting messages only appear once the window is talking to the daemon.
 
-If `cargo` on your PATH is a rustup shim and fails with `unknown proxy name: Cursor-3.17.8-x86_64`, call the real binary instead:
+The window has no system title bar. Drag it by its own header. The header holds the minimize, maximize and close buttons. On Wayland the corners are rounded and closing the window exits the window process. On X11 the corners are square and closing hides the window to the tray. The daemon runs on in both cases.
 
-```
-$(rustup which cargo) run -p opentartarus-daemon
-```
-
-The same substitution works for the UI crate and for tests. You can also use the `cargo` under your stable rustup toolchain directory.
+The daemon writes its log to `~/.local/state/opentartarus/opentartarus.log`, or under `$XDG_STATE_HOME` if that is set.
 
 ## How to test
 
@@ -57,7 +64,7 @@ The same substitution works for the UI crate and for tests. You can also use the
 cargo test --workspace
 ```
 
-The Tartarus V2 plus OpenRazer sysfs check is skipped unless you set:
+The check that talks to a real Tartarus V2 through OpenRazer sysfs is skipped unless you set:
 
 ```
 OPENTARTARUS_HW_TEST=1
@@ -65,20 +72,19 @@ OPENTARTARUS_HW_TEST=1
 
 ## First-run permissions
 
-The keypad and `/dev/uinput` need group `opentartarus`. The udev rule in `packaging/udev/99-opentartarus.rules` assigns that group on Tartarus V2/Pro nodes and uinput.
+The keypad and `/dev/uinput` need the group `opentartarus`. The udev rule in `packaging/udev/99-opentartarus.rules` assigns that group to Tartarus V2 and Pro nodes and to uinput.
 
-`opentartarus-fix-permissions` (polkit helper, policy in `packaging/polkit/com.opentartarus.fix-permissions.policy`) creates the group, adds your user, and writes the udev rule if it is missing. The UI "Fix permissions" button runs that helper via `pkexec` at `/usr/libexec/opentartarus-fix-permissions`.
+`opentartarus-fix-permissions` is a polkit helper. Its policy is in `packaging/polkit/com.opentartarus.fix-permissions.policy`. It creates the group, adds your user, and writes the udev rule if it is missing. The "Fix permissions" entry in the window's menu runs that helper through `pkexec` at `/usr/libexec/opentartarus-fix-permissions`.
 
-After a successful fix, unplug the Tartarus, wait a second, and plug it back in. If it still cannot open the device, sign out and sign back in so the new group applies.
+After a successful fix, unplug the Tartarus, wait a second, and plug it back in. If the app still cannot open the device, sign out and back in so the new group applies.
 
-Login start files are in `packaging/`: a systemd user unit (`packaging/systemd/opentartarus-daemon.service`) and `packaging/autostart/opentartarus-daemon.desktop`. The window launcher is `packaging/desktop/opentartarus.desktop`.
+Login start files are in `packaging/`: a systemd user unit at `packaging/systemd/opentartarus-daemon.service`, and `packaging/autostart/opentartarus-daemon.desktop`. The window launcher is `packaging/desktop/opentartarus.desktop`.
 
 ### Icon
 
-The tray icon is built into the daemon, so it shows with no install step.
+The tray icon and the window icon are built into the binaries. No install step is needed for them.
 
-To give the desktop menu and the window the same icon, copy the SVG into your
-own icon directory and refresh the cache:
+To give the desktop menu the same icon, copy the SVG into your own icon directory and refresh the cache:
 
     mkdir -p ~/.local/share/icons/hicolor/scalable/apps
     cp packaging/icons/opentartarus.svg ~/.local/share/icons/hicolor/scalable/apps/
@@ -89,8 +95,12 @@ The last line is optional. Most desktops pick the file up on the next login.
 ## Layout
 
 - `crates/`
-  - `opentartarus-core`: profile format, remap types, IPC, shipped game layouts in `profiles/`
-  - `opentartarus-daemon`: tray process, remaps, lighting
-  - `opentartarus-ui`: iced window
+  - `opentartarus-core`: profile format, remap engine, IPC types, and the shipped layouts in `profiles/`
+  - `opentartarus-daemon`: tray process, device grab, remap playback, lighting
+  - `opentartarus-ui`: the iced window
   - `opentartarus-fix-permissions`: polkit helper that installs the udev rule
-- `packaging/`: udev, systemd user unit, polkit policy, desktop entry, login autostart
+- `packaging/`: udev rule, systemd user unit, polkit policy, desktop entry, login autostart, icons
+
+## License
+
+MIT.
