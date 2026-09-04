@@ -2,6 +2,8 @@
 
 **A Razer Synapse replacement for Linux. Key remapping, per-game profiles, macros and RGB lighting for the Razer Tartarus V2 and Tartarus Pro keypad.**
 
+![The OpenTartarus window, showing the profile list on the left and the Tartarus V2 key pad in the middle](docs/screenshots/window-keys.png)
+
 A Linux app for the Razer Tartarus V2 (`1532:022b`) and Tartarus Pro (`1532:0244`). It remaps the keypad with per-game profiles, the way Razer Synapse does on Windows, and it drives the lighting through OpenRazer. If OpenRazer is not running it tries OpenRGB. With neither, remaps still work and the lighting controls stay off.
 
 Two processes make up the app. A tray daemon grabs the keypad, plays the remaps, and talks to lighting. A window, built with iced, edits profiles and shows the pad. Close the window and the daemon keeps remapping. Quit from the tray menu to stop it.
