@@ -1,5 +1,5 @@
-use iced::advanced::widget::operation::{Operation, Outcome};
 use iced::advanced::widget::operation::focusable::Focusable;
+use iced::advanced::widget::operation::{Operation, Outcome};
 use iced::advanced::widget::Id;
 use iced::Rectangle;
 use opentartarus_core::types::{KeyToken, Modifier, MouseTarget};
@@ -110,12 +110,7 @@ mod tests {
 
     #[test]
     fn recording_sends_submit_record_not_set_binding() {
-        let capture = capture_window_key(
-            true,
-            false,
-            Some(KeyToken::C),
-            vec![Modifier::Ctrl],
-        );
+        let capture = capture_window_key(true, false, Some(KeyToken::C), vec![Modifier::Ctrl]);
         assert_eq!(
             capture,
             KeyCapture::SubmitRecord {

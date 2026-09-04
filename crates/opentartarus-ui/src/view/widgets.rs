@@ -1,8 +1,8 @@
 use crate::app::{Message, Tab};
 use crate::theme;
+use iced::border::Radius;
 use iced::overlay::menu;
 use iced::widget::{button, container, pick_list, text, Space};
-use iced::border::Radius;
 use iced::{Background, Border, Color, Element, Length, Shadow, Theme, Vector};
 
 // This module is the shared style vocabulary the view modules draw from.
@@ -636,7 +636,10 @@ mod tests {
         let theme = theme::theme();
         let active = tab_button_style(true)(&theme, button::Status::Active);
         let idle = tab_button_style(false)(&theme, button::Status::Active);
-        assert_eq!(active.background, Some(Background::Color(theme::COLOR_RAISED)));
+        assert_eq!(
+            active.background,
+            Some(Background::Color(theme::COLOR_RAISED))
+        );
         assert_eq!(idle.background, Some(Background::Color(Color::TRANSPARENT)));
         assert_eq!(active.text_color, theme::COLOR_TEXT);
         assert_eq!(idle.text_color, theme::COLOR_TEXT_DIM);

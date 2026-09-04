@@ -75,8 +75,7 @@ fn main() {
             let mut totals = [0u32; CHANNELS];
             for sub_row in 0..SS {
                 for sub_column in 0..SS {
-                    let source =
-                        ((row * SS + sub_row) * BIG + column * SS + sub_column) * CHANNELS;
+                    let source = ((row * SS + sub_row) * BIG + column * SS + sub_column) * CHANNELS;
                     let alpha = big[source + 3] as u32;
                     totals[0] += big[source] as u32 * alpha / OPAQUE as u32;
                     totals[1] += big[source + 1] as u32 * alpha / OPAQUE as u32;
@@ -100,8 +99,8 @@ fn main() {
         }
     }
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../packaging/icons/opentartarus-64.png");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/icons/opentartarus-64.png");
     std::fs::create_dir_all(path.parent().expect("icons directory")).expect("create icons dir");
     let file = File::create(&path).expect("create the PNG");
     let mut encoder = png::Encoder::new(BufWriter::new(file), SIZE as u32, SIZE as u32);

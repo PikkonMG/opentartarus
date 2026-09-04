@@ -478,7 +478,11 @@ mod tests {
         assert_eq!(applied, Some(Ok("dota-2".to_owned())));
         let mut st = state.lock().expect("daemon state");
         assert_eq!(st.active_id.as_deref(), Some("dota-2"));
-        assert_eq!(epoch.load(), 1, "the engine changed, so in-flight takers must not restore");
+        assert_eq!(
+            epoch.load(),
+            1,
+            "the engine changed, so in-flight takers must not restore"
+        );
         let codes = probe_codes(&mut st.engine, KP02_NATIVE_CODE);
         assert_eq!(
             codes,

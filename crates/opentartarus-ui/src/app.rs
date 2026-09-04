@@ -1,7 +1,7 @@
 use crate::client::{self, FixPermissionsOutcome, Outgoing};
 use crate::keys::{
-    capture_window_key, is_combo_id, is_new_profile_id, query_focused_id,
-    submit_record_key_params, submit_record_mouse_params, KeyCapture, NEW_PROFILE_INPUT_ID,
+    capture_window_key, is_combo_id, is_new_profile_id, query_focused_id, submit_record_key_params,
+    submit_record_mouse_params, KeyCapture, NEW_PROFILE_INPUT_ID,
 };
 use crate::theme;
 use iced::advanced::widget::Id;
@@ -633,9 +633,7 @@ impl App {
                 Task::none()
             }
             Message::SwitchProfilePick(choice) => {
-                self.apply_action(Action::SwitchProfile {
-                    profile: choice.id,
-                });
+                self.apply_action(Action::SwitchProfile { profile: choice.id });
                 Task::none()
             }
         }
@@ -688,10 +686,10 @@ impl App {
                     } else {
                         Some(Banner::NoDevice)
                     }
-                } else if let Some(msg) = &self.last_error {
-                    Some(Banner::Other(msg.clone()))
                 } else {
-                    None
+                    self.last_error
+                        .as_ref()
+                        .map(|msg| Banner::Other(msg.clone()))
                 }
             }
         }
@@ -1272,17 +1270,18 @@ fn map_key_token(key: &Key) -> Option<KeyToken> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::keys::new_profile_widget_id;
     use crate::client;
+    use crate::keys::new_profile_widget_id;
     use opentartarus_core::ipc::EventMethod;
     use std::path::Path;
 
     fn running_app() -> App {
-        let mut app = App::default();
-        app.phase = Phase::Running;
-        app.device_present = true;
-        app.ever_present = true;
-        app
+        App {
+            phase: Phase::Running,
+            device_present: true,
+            ever_present: true,
+            ..App::default()
+        }
     }
 
     #[test]
@@ -1653,8 +1652,14 @@ mod tests {
         let _ = app.update(Message::StartNewProfile);
         let _ = app.update(Message::NewProfileNameChanged("   ".into()));
         let _ = app.update(Message::SubmitNewProfile);
-        assert!(rx.try_recv().is_err(), "nothing to create from a blank name");
-        assert!(app.new_profile_name.is_some(), "box stays open to be filled in");
+        assert!(
+            rx.try_recv().is_err(),
+            "nothing to create from a blank name"
+        );
+        assert!(
+            app.new_profile_name.is_some(),
+            "box stays open to be filled in"
+        );
     }
 
     #[test]
@@ -1689,7 +1694,10 @@ mod tests {
             modifiers: keyboard::Modifiers::default(),
             focused: Some(new_profile_widget_id()),
         });
-        assert!(rx.try_recv().is_err(), "a typed letter must not send SetBinding");
+        assert!(
+            rx.try_recv().is_err(),
+            "a typed letter must not send SetBinding"
+        );
         assert!(!app.bindings.contains_key(&KeyId::Kp01));
     }
 
@@ -1749,7 +1757,10 @@ mod tests {
         let by_id = |id: &str| app.profiles.iter().find(|r| r.id == id).unwrap();
         assert!(!by_id("default").can_delete);
         assert!(by_id("mine").can_delete);
-        assert!(!by_id("old-daemon").can_delete, "a missing flag reads as not deletable");
+        assert!(
+            !by_id("old-daemon").can_delete,
+            "a missing flag reads as not deletable"
+        );
     }
 
     #[test]
@@ -1829,7 +1840,11 @@ mod tests {
         let outgoing = rx.try_recv().unwrap();
         assert_eq!(outgoing.params["action"], json!({ "type": "next_profile" }));
         assert_eq!(app.bindings.get(&KeyId::Mode), Some(&Action::NextProfile));
-        assert_eq!(app.switch_target_choice(), None, "a cycle names no one profile");
+        assert_eq!(
+            app.switch_target_choice(),
+            None,
+            "a cycle names no one profile"
+        );
     }
 
     #[test]

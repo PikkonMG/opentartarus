@@ -11,13 +11,8 @@ pub enum RecordReason {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RecordOutcome {
-    Recorded {
-        key_id: KeyId,
-        action: Action,
-    },
-    Cancelled {
-        reason: RecordReason,
-    },
+    Recorded { key_id: KeyId, action: Action },
+    Cancelled { reason: RecordReason },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,9 +83,7 @@ impl Recorder {
     }
 
     pub fn on_disconnect(&mut self) -> Option<RecordOutcome> {
-        if self.session.take().is_none() {
-            return None;
-        }
+        self.session.take()?;
         Some(RecordOutcome::Cancelled {
             reason: RecordReason::Disconnected,
         })
@@ -146,7 +139,7 @@ mod tests {
         let mut r = Recorder::default();
         r.start(KeyId::Kp01, None, 0).unwrap();
         assert!(r.stop());
-        assert!(matches!(r.on_timeout(0), None));
+        assert!(r.on_timeout(0).is_none());
         r.start(KeyId::Kp02, None, 0).unwrap();
         assert_eq!(
             r.start(KeyId::Kp03, None, 1).unwrap_err(),

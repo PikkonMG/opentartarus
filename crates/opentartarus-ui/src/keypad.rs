@@ -242,13 +242,32 @@ fn hit_test(local: Point, size: Size, model: Option<DeviceModel>) -> Option<KeyI
 
 const GRID_ROW_LENGTHS: [usize; 4] = [5, 5, 5, 4];
 const GRID_ROW_KEYS: [KeyId; 19] = [
-    KeyId::Kp01, KeyId::Kp02, KeyId::Kp03, KeyId::Kp04, KeyId::Kp05,
-    KeyId::Kp06, KeyId::Kp07, KeyId::Kp08, KeyId::Kp09, KeyId::Kp10,
-    KeyId::Kp11, KeyId::Kp12, KeyId::Kp13, KeyId::Kp14, KeyId::Kp15,
-    KeyId::Kp16, KeyId::Kp17, KeyId::Kp18, KeyId::Kp19,
+    KeyId::Kp01,
+    KeyId::Kp02,
+    KeyId::Kp03,
+    KeyId::Kp04,
+    KeyId::Kp05,
+    KeyId::Kp06,
+    KeyId::Kp07,
+    KeyId::Kp08,
+    KeyId::Kp09,
+    KeyId::Kp10,
+    KeyId::Kp11,
+    KeyId::Kp12,
+    KeyId::Kp13,
+    KeyId::Kp14,
+    KeyId::Kp15,
+    KeyId::Kp16,
+    KeyId::Kp17,
+    KeyId::Kp18,
+    KeyId::Kp19,
 ];
-const WHEEL_COLUMN_KEYS: [KeyId; 4] =
-    [KeyId::WheelUp, KeyId::WheelClick, KeyId::WheelDown, KeyId::Mode];
+const WHEEL_COLUMN_KEYS: [KeyId; 4] = [
+    KeyId::WheelUp,
+    KeyId::WheelClick,
+    KeyId::WheelDown,
+    KeyId::Mode,
+];
 
 const KEY_WIDTH: f32 = 50.0;
 const KEY_HEIGHT: f32 = 44.0;
@@ -273,8 +292,7 @@ const GRID_HEIGHT: f32 = KEY_HEIGHT * GRID_ROW_COUNT + KEY_GAP * (GRID_ROW_COUNT
 const TOP_WIDTH: f32 = GRID_WIDTH + KEY_GAP + WHEEL_WIDTH;
 const DPAD_WIDTH: f32 =
     DPAD_CELL_WIDTH * DPAD_COLUMNS as f32 + DPAD_GAP * (DPAD_COLUMNS as f32 - 1.0);
-const DPAD_HEIGHT: f32 =
-    DPAD_CELL_HEIGHT * DPAD_ROWS as f32 + DPAD_GAP * (DPAD_ROWS as f32 - 1.0);
+const DPAD_HEIGHT: f32 = DPAD_CELL_HEIGHT * DPAD_ROWS as f32 + DPAD_GAP * (DPAD_ROWS as f32 - 1.0);
 const THUMB_ROW_WIDTH: f32 = THUMB_KEY_WIDTH + THUMB_CLUSTER_GAP + DPAD_WIDTH;
 /// `DPAD_HEIGHT` (88) exceeds `THUMB_KEY_HEIGHT` (52).
 /// `derived_constants_pick_the_larger_term` guards this.
@@ -294,9 +312,14 @@ const MAX_SCALE: f32 = 2.0;
 /// The eight thumb-pad directions, by 3x3 cell. The centre cell is absent on
 /// purpose: it is drawn as a label but is not clickable.
 const THUMB_PAD_CELLS: [(KeyId, usize, usize); 8] = [
-    (KeyId::ThumbNw, 0, 0), (KeyId::ThumbN, 1, 0), (KeyId::ThumbNe, 2, 0),
-    (KeyId::ThumbW, 0, 1),                         (KeyId::ThumbE, 2, 1),
-    (KeyId::ThumbSw, 0, 2), (KeyId::ThumbS, 1, 2), (KeyId::ThumbSe, 2, 2),
+    (KeyId::ThumbNw, 0, 0),
+    (KeyId::ThumbN, 1, 0),
+    (KeyId::ThumbNe, 2, 0),
+    (KeyId::ThumbW, 0, 1),
+    (KeyId::ThumbE, 2, 1),
+    (KeyId::ThumbSw, 0, 2),
+    (KeyId::ThumbS, 1, 2),
+    (KeyId::ThumbSe, 2, 2),
 ];
 
 /// The Pro's analog stick uses the four edge cells of the same 3x3 grid.
@@ -420,7 +443,10 @@ mod tests {
     const TIGHT: Size = Size::new(220.0, 180.0);
 
     fn ids(size: Size, model: Option<DeviceModel>) -> Vec<KeyId> {
-        key_rects(size, model).into_iter().map(|(id, _)| id).collect()
+        key_rects(size, model)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect()
     }
 
     #[test]
@@ -429,10 +455,16 @@ mod tests {
         // constant-valued assertion (`assertions_on_constants`).
         let top_width = TOP_WIDTH;
         let thumb_row_width = THUMB_ROW_WIDTH;
-        assert!(top_width >= thumb_row_width, "NATURAL_WIDTH must be TOP_WIDTH");
+        assert!(
+            top_width >= thumb_row_width,
+            "NATURAL_WIDTH must be TOP_WIDTH"
+        );
         let dpad_height = DPAD_HEIGHT;
         let thumb_key_height = THUMB_KEY_HEIGHT;
-        assert!(dpad_height >= thumb_key_height, "THUMB_ROW_HEIGHT must be DPAD_HEIGHT");
+        assert!(
+            dpad_height >= thumb_key_height,
+            "THUMB_ROW_HEIGHT must be DPAD_HEIGHT"
+        );
         assert_eq!(NATURAL_WIDTH, TOP_WIDTH);
         assert_eq!(THUMB_ROW_HEIGHT, DPAD_HEIGHT);
         assert_eq!(GRID_ROW_LENGTHS.iter().sum::<usize>(), GRID_ROW_KEYS.len());
@@ -458,13 +490,24 @@ mod tests {
     fn pro_swaps_the_thumb_pad_for_the_analog_stick() {
         let got = ids(BIG, Some(DeviceModel::Pro));
         assert_eq!(got.len(), 28, "20 grid + 4 wheel column + 4 analog");
-        for id in [KeyId::AnalogUp, KeyId::AnalogDown, KeyId::AnalogLeft, KeyId::AnalogRight] {
+        for id in [
+            KeyId::AnalogUp,
+            KeyId::AnalogDown,
+            KeyId::AnalogLeft,
+            KeyId::AnalogRight,
+        ] {
             assert!(got.contains(&id), "missing {id:?}");
         }
         assert!(!got.iter().any(|id| matches!(
             id,
-            KeyId::ThumbN | KeyId::ThumbNe | KeyId::ThumbE | KeyId::ThumbSe
-                | KeyId::ThumbS | KeyId::ThumbSw | KeyId::ThumbW | KeyId::ThumbNw
+            KeyId::ThumbN
+                | KeyId::ThumbNe
+                | KeyId::ThumbE
+                | KeyId::ThumbSe
+                | KeyId::ThumbS
+                | KeyId::ThumbSw
+                | KeyId::ThumbW
+                | KeyId::ThumbNw
         )));
     }
 
@@ -517,11 +560,34 @@ mod tests {
     fn rows_are_five_five_five_four_and_stack_downwards() {
         let rects = key_rects(BIG, Some(DeviceModel::V2));
         let y_of = |id: KeyId| rects.iter().find(|(k, _)| *k == id).unwrap().1.y;
-        let row1 = [KeyId::Kp01, KeyId::Kp02, KeyId::Kp03, KeyId::Kp04, KeyId::Kp05];
-        let row2 = [KeyId::Kp06, KeyId::Kp07, KeyId::Kp08, KeyId::Kp09, KeyId::Kp10];
-        let row3 = [KeyId::Kp11, KeyId::Kp12, KeyId::Kp13, KeyId::Kp14, KeyId::Kp15];
+        let row1 = [
+            KeyId::Kp01,
+            KeyId::Kp02,
+            KeyId::Kp03,
+            KeyId::Kp04,
+            KeyId::Kp05,
+        ];
+        let row2 = [
+            KeyId::Kp06,
+            KeyId::Kp07,
+            KeyId::Kp08,
+            KeyId::Kp09,
+            KeyId::Kp10,
+        ];
+        let row3 = [
+            KeyId::Kp11,
+            KeyId::Kp12,
+            KeyId::Kp13,
+            KeyId::Kp14,
+            KeyId::Kp15,
+        ];
         let row4 = [KeyId::Kp16, KeyId::Kp17, KeyId::Kp18, KeyId::Kp19];
-        for row in [row1.as_slice(), row2.as_slice(), row3.as_slice(), row4.as_slice()] {
+        for row in [
+            row1.as_slice(),
+            row2.as_slice(),
+            row3.as_slice(),
+            row4.as_slice(),
+        ] {
             let first = y_of(row[0]);
             for id in row {
                 assert_eq!(y_of(*id), first, "{id:?} left its row");
@@ -585,11 +651,17 @@ mod tests {
             assert!(rect.x >= -f32::EPSILON, "{id:?} left the bounds");
             assert!(rect.y >= -f32::EPSILON, "{id:?} left the bounds");
             assert!(rect.x + rect.width <= TIGHT.width + 1.0, "{id:?} overflows");
-            assert!(rect.y + rect.height <= TIGHT.height + 1.0, "{id:?} overflows");
+            assert!(
+                rect.y + rect.height <= TIGHT.height + 1.0,
+                "{id:?} overflows"
+            );
         }
         let big_key = key_rects(BIG, Some(DeviceModel::V2))[0].1;
         let tight_key = rects[0].1;
-        assert!(tight_key.width < big_key.width, "tight bounds must shrink keys");
+        assert!(
+            tight_key.width < big_key.width,
+            "tight bounds must shrink keys"
+        );
     }
 
     #[test]
@@ -646,7 +718,10 @@ mod tests {
         let huge = Size::new(4000.0, 3000.0);
         let (scale, offset_x, offset_y) = fit(huge);
         assert_eq!(scale, MAX_SCALE, "growth must stop at the cap");
-        assert!(offset_x > 0.0 && offset_y > 0.0, "capped pad must stay centred");
+        assert!(
+            offset_x > 0.0 && offset_y > 0.0,
+            "capped pad must stay centred"
+        );
         let rects = key_rects(huge, Some(DeviceModel::V2));
         let left = rects.iter().map(|(_, r)| r.x).fold(f32::MAX, f32::min);
         let right = rects
@@ -669,7 +744,12 @@ mod tests {
             key.width / key.height
         };
         let natural = KEY_WIDTH / KEY_HEIGHT;
-        for size in [TIGHT, BIG, Size::new(624.0, 600.0), Size::new(4000.0, 300.0)] {
+        for size in [
+            TIGHT,
+            BIG,
+            Size::new(624.0, 600.0),
+            Size::new(4000.0, 300.0),
+        ] {
             assert!(
                 (ratio_of(size) - natural).abs() < 0.01,
                 "keys must stay key-shaped at {size:?}"

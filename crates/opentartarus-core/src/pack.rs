@@ -79,8 +79,8 @@ mod tests {
 
     const NEW_GAME_IDS: [&str; 7] = [
         "overwatch-2",
-            "counter-strike-2",
-                "diablo-4",
+        "counter-strike-2",
+        "diablo-4",
         "elden-ring",
         "guild-wars-2",
         "elder-scrolls-online",
@@ -140,30 +140,30 @@ mod tests {
         assert_key_bindings(
             &p,
             &[
-            (KeyId::Kp01, KeyToken::Num1),
-            (KeyId::Kp02, KeyToken::Num2),
-            (KeyId::Kp03, KeyToken::Num3),
-            (KeyId::Kp04, KeyToken::Num4),
-            (KeyId::Kp05, KeyToken::Num5),
-            (KeyId::Kp06, KeyToken::Tab),
-            (KeyId::Kp07, KeyToken::Q),
-            (KeyId::Kp08, KeyToken::W),
-            (KeyId::Kp09, KeyToken::E),
-            (KeyId::Kp10, KeyToken::R),
-            (KeyId::Kp11, KeyToken::CapsLock),
-            (KeyId::Kp12, KeyToken::A),
-            (KeyId::Kp13, KeyToken::S),
-            (KeyId::Kp14, KeyToken::D),
-            (KeyId::Kp15, KeyToken::F),
-            (KeyId::Kp16, KeyToken::LeftShift),
-            (KeyId::Kp17, KeyToken::Z),
-            (KeyId::Kp18, KeyToken::X),
-            (KeyId::Kp19, KeyToken::C),
-            (KeyId::Kp20, KeyToken::Space),
-            (KeyId::ThumbN, KeyToken::Up),
-            (KeyId::ThumbW, KeyToken::Left),
-            (KeyId::ThumbS, KeyToken::Down),
-            (KeyId::ThumbE, KeyToken::Right),
+                (KeyId::Kp01, KeyToken::Num1),
+                (KeyId::Kp02, KeyToken::Num2),
+                (KeyId::Kp03, KeyToken::Num3),
+                (KeyId::Kp04, KeyToken::Num4),
+                (KeyId::Kp05, KeyToken::Num5),
+                (KeyId::Kp06, KeyToken::Tab),
+                (KeyId::Kp07, KeyToken::Q),
+                (KeyId::Kp08, KeyToken::W),
+                (KeyId::Kp09, KeyToken::E),
+                (KeyId::Kp10, KeyToken::R),
+                (KeyId::Kp11, KeyToken::CapsLock),
+                (KeyId::Kp12, KeyToken::A),
+                (KeyId::Kp13, KeyToken::S),
+                (KeyId::Kp14, KeyToken::D),
+                (KeyId::Kp15, KeyToken::F),
+                (KeyId::Kp16, KeyToken::LeftShift),
+                (KeyId::Kp17, KeyToken::Z),
+                (KeyId::Kp18, KeyToken::X),
+                (KeyId::Kp19, KeyToken::C),
+                (KeyId::Kp20, KeyToken::Space),
+                (KeyId::ThumbN, KeyToken::Up),
+                (KeyId::ThumbW, KeyToken::Left),
+                (KeyId::ThumbS, KeyToken::Down),
+                (KeyId::ThumbE, KeyToken::Right),
             ],
         );
     }
@@ -176,26 +176,26 @@ mod tests {
         assert_key_bindings(
             &p,
             &[
-            (KeyId::Kp01, KeyToken::Q),
-            (KeyId::Kp02, KeyToken::W),
-            (KeyId::Kp03, KeyToken::E),
-            (KeyId::Kp04, KeyToken::R),
-            (KeyId::Kp05, KeyToken::D),
-            (KeyId::Kp06, KeyToken::F),
-            (KeyId::Kp07, KeyToken::Z),
-            (KeyId::Kp08, KeyToken::X),
-            (KeyId::Kp09, KeyToken::C),
-            (KeyId::Kp10, KeyToken::V),
-            (KeyId::Kp11, KeyToken::B),
-            (KeyId::Kp12, KeyToken::N),
-            (KeyId::Kp13, KeyToken::F4),
-            (KeyId::Kp14, KeyToken::A),
-            (KeyId::Kp15, KeyToken::S),
-            (KeyId::Kp16, KeyToken::Grave),
-            (KeyId::Kp17, KeyToken::F2),
-            (KeyId::Kp18, KeyToken::F3),
-            (KeyId::Kp19, KeyToken::Tab),
-            (KeyId::Kp20, KeyToken::F1),
+                (KeyId::Kp01, KeyToken::Q),
+                (KeyId::Kp02, KeyToken::W),
+                (KeyId::Kp03, KeyToken::E),
+                (KeyId::Kp04, KeyToken::R),
+                (KeyId::Kp05, KeyToken::D),
+                (KeyId::Kp06, KeyToken::F),
+                (KeyId::Kp07, KeyToken::Z),
+                (KeyId::Kp08, KeyToken::X),
+                (KeyId::Kp09, KeyToken::C),
+                (KeyId::Kp10, KeyToken::V),
+                (KeyId::Kp11, KeyToken::B),
+                (KeyId::Kp12, KeyToken::N),
+                (KeyId::Kp13, KeyToken::F4),
+                (KeyId::Kp14, KeyToken::A),
+                (KeyId::Kp15, KeyToken::S),
+                (KeyId::Kp16, KeyToken::Grave),
+                (KeyId::Kp17, KeyToken::F2),
+                (KeyId::Kp18, KeyToken::F3),
+                (KeyId::Kp19, KeyToken::Tab),
+                (KeyId::Kp20, KeyToken::F1),
             ],
         );
     }
@@ -270,26 +270,26 @@ mod tests {
         assert_key_bindings(
             &p,
             &[
-            (KeyId::Kp01, KeyToken::Num1),
-            (KeyId::Kp02, KeyToken::Num2),
-            (KeyId::Kp03, KeyToken::Num3),
-            (KeyId::Kp04, KeyToken::Num4),
-            (KeyId::Kp05, KeyToken::Num5),
-            (KeyId::Kp06, KeyToken::Q),
-            (KeyId::Kp07, KeyToken::W),
-            (KeyId::Kp08, KeyToken::E),
-            (KeyId::Kp09, KeyToken::R),
-            (KeyId::Kp10, KeyToken::T),
-            (KeyId::Kp11, KeyToken::Tab),
-            (KeyId::Kp12, KeyToken::X),
-            (KeyId::Kp13, KeyToken::D),
-            (KeyId::Kp14, KeyToken::Z),
-            (KeyId::Kp15, KeyToken::G),
-            (KeyId::Kp16, KeyToken::Enter),
-            (KeyId::Kp17, KeyToken::I),
-            (KeyId::Kp18, KeyToken::C),
-            (KeyId::Kp19, KeyToken::P),
-            (KeyId::Kp20, KeyToken::Space),
+                (KeyId::Kp01, KeyToken::Num1),
+                (KeyId::Kp02, KeyToken::Num2),
+                (KeyId::Kp03, KeyToken::Num3),
+                (KeyId::Kp04, KeyToken::Num4),
+                (KeyId::Kp05, KeyToken::Num5),
+                (KeyId::Kp06, KeyToken::Q),
+                (KeyId::Kp07, KeyToken::W),
+                (KeyId::Kp08, KeyToken::E),
+                (KeyId::Kp09, KeyToken::R),
+                (KeyId::Kp10, KeyToken::T),
+                (KeyId::Kp11, KeyToken::Tab),
+                (KeyId::Kp12, KeyToken::X),
+                (KeyId::Kp13, KeyToken::D),
+                (KeyId::Kp14, KeyToken::Z),
+                (KeyId::Kp15, KeyToken::G),
+                (KeyId::Kp16, KeyToken::Enter),
+                (KeyId::Kp17, KeyToken::I),
+                (KeyId::Kp18, KeyToken::C),
+                (KeyId::Kp19, KeyToken::P),
+                (KeyId::Kp20, KeyToken::Space),
             ],
         );
     }
@@ -505,10 +505,7 @@ mod tests {
     fn a_setup_note_exists_only_where_the_game_needs_an_in_game_step() {
         // Diablo needs a preset switched on; Elden Ring changed its layout
         // in a patch. Every other profile works with the game's defaults.
-        let with_note = [
-            "diablo-4",
-            "elden-ring",
-        ];
+        let with_note = ["diablo-4", "elden-ring"];
         for id in SHIPPED_IDS {
             let p = shipped_profile(id).unwrap();
             assert_eq!(
@@ -522,7 +519,10 @@ mod tests {
         assert!(json.get("setup_note").is_some(), "a note survives a save");
         let plain = shipped_profile("dota-2").unwrap();
         let json = serde_json::to_value(&plain).unwrap();
-        assert!(json.get("setup_note").is_none(), "no note, no field written");
+        assert!(
+            json.get("setup_note").is_none(),
+            "no note, no field written"
+        );
     }
 
     #[test]

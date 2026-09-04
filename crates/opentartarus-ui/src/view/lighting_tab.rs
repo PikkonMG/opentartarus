@@ -31,16 +31,20 @@ pub fn effect_swatch_color(effect: LightingEffect, current: Option<[u8; 3]>) -> 
             ..chosen
         },
         LightingEffect::Reactive => Color::from_rgb8(
-            REACTIVE_PREVIEW[0], REACTIVE_PREVIEW[1], REACTIVE_PREVIEW[2],
+            REACTIVE_PREVIEW[0],
+            REACTIVE_PREVIEW[1],
+            REACTIVE_PREVIEW[2],
         ),
         LightingEffect::Starlight => Color::from_rgb8(
-            STARLIGHT_PREVIEW[0], STARLIGHT_PREVIEW[1], STARLIGHT_PREVIEW[2],
+            STARLIGHT_PREVIEW[0],
+            STARLIGHT_PREVIEW[1],
+            STARLIGHT_PREVIEW[2],
         ),
-        LightingEffect::Wave => {
-            Color::from_rgb8(WAVE_PREVIEW[0], WAVE_PREVIEW[1], WAVE_PREVIEW[2])
-        }
+        LightingEffect::Wave => Color::from_rgb8(WAVE_PREVIEW[0], WAVE_PREVIEW[1], WAVE_PREVIEW[2]),
         LightingEffect::Spectrum => Color::from_rgb8(
-            SPECTRUM_PREVIEW[0], SPECTRUM_PREVIEW[1], SPECTRUM_PREVIEW[2],
+            SPECTRUM_PREVIEW[0],
+            SPECTRUM_PREVIEW[1],
+            SPECTRUM_PREVIEW[2],
         ),
         LightingEffect::None => theme::COLOR_BACKGROUND,
     }
@@ -68,7 +72,11 @@ fn effect_card(app: &App, effect: LightingEffect) -> Element<'_, Message> {
     .spacing(theme::SPACE_SM)
     .align_x(Alignment::Center);
 
-    let style = if selected { selected_effect_button } else { quiet_button };
+    let style = if selected {
+        selected_effect_button
+    } else {
+        quiet_button
+    };
     button(card)
         .width(Length::Fill)
         .padding(theme::SPACE_SM)
@@ -105,29 +113,35 @@ fn color_row(app: &App) -> Element<'_, Message> {
     }
     let rgb = app.lighting.color.unwrap_or(theme::DEFAULT_LIGHT_COLOR);
     let channels = row![
-        slider(0..=theme::COLOR_CHANNEL_MAX, rgb[0], |v| Message::LightingColor(0, v)),
-        slider(0..=theme::COLOR_CHANNEL_MAX, rgb[1], |v| Message::LightingColor(1, v)),
-        slider(0..=theme::COLOR_CHANNEL_MAX, rgb[2], |v| Message::LightingColor(2, v)),
+        slider(0..=theme::COLOR_CHANNEL_MAX, rgb[0], |v| {
+            Message::LightingColor(0, v)
+        }),
+        slider(0..=theme::COLOR_CHANNEL_MAX, rgb[1], |v| {
+            Message::LightingColor(1, v)
+        }),
+        slider(0..=theme::COLOR_CHANNEL_MAX, rgb[2], |v| {
+            Message::LightingColor(2, v)
+        }),
     ]
     .spacing(theme::SPACE_SM);
 
-    column![
-        section_label(theme::LABEL_COLOR),
-        presets,
-        channels,
-    ]
-    .spacing(theme::SPACE_SM)
-    .into()
+    column![section_label(theme::LABEL_COLOR), presets, channels,]
+        .spacing(theme::SPACE_SM)
+        .into()
 }
 
 pub fn lighting_tab(app: &App) -> Element<'_, Message> {
     let body: Element<'_, Message> = if let Some(copy) = app.lighting_footer_message() {
-        container(text(copy).size(theme::TEXT_BODY).color(theme::COLOR_TEXT_DIM))
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(Alignment::Center)
-            .align_y(Alignment::Center)
-            .into()
+        container(
+            text(copy)
+                .size(theme::TEXT_BODY)
+                .color(theme::COLOR_TEXT_DIM),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .into()
     } else if !lighting_is_editable(app) {
         Space::with_height(Length::Fill).into()
     } else {
@@ -202,9 +216,15 @@ mod tests {
     fn colour_effects_preview_the_chosen_colour() {
         let chosen = Some([10u8, 20, 30]);
         let expected = Color::from_rgb8(10, 20, 30);
-        assert_eq!(effect_swatch_color(LightingEffect::Static, chosen), expected);
+        assert_eq!(
+            effect_swatch_color(LightingEffect::Static, chosen),
+            expected
+        );
         let breath = effect_swatch_color(LightingEffect::Breath, chosen);
-        assert_eq!((breath.r, breath.g, breath.b), (expected.r, expected.g, expected.b));
+        assert_eq!(
+            (breath.r, breath.g, breath.b),
+            (expected.r, expected.g, expected.b)
+        );
         assert!(breath.a < expected.a, "breathing must read as dimmer");
     }
 

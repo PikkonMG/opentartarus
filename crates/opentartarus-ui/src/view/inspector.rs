@@ -13,13 +13,48 @@ use opentartarus_core::labels::{bind_label, key_display_name, key_position_text}
 use opentartarus_core::types::{Action, KeyToken, MouseButton, MouseTarget, ScrollDir};
 
 pub const MOUSE_TARGETS: [(&str, MouseTarget); 7] = [
-    (theme::MOUSE_LEFT, MouseTarget::Button { button: MouseButton::Left }),
-    (theme::MOUSE_RIGHT, MouseTarget::Button { button: MouseButton::Right }),
-    (theme::MOUSE_MIDDLE, MouseTarget::Button { button: MouseButton::Middle }),
-    (theme::MOUSE_BACK, MouseTarget::Button { button: MouseButton::Back }),
-    (theme::MOUSE_FORWARD, MouseTarget::Button { button: MouseButton::Forward }),
-    (theme::MOUSE_WHEEL_UP, MouseTarget::Scroll { scroll: ScrollDir::Up }),
-    (theme::MOUSE_WHEEL_DOWN, MouseTarget::Scroll { scroll: ScrollDir::Down }),
+    (
+        theme::MOUSE_LEFT,
+        MouseTarget::Button {
+            button: MouseButton::Left,
+        },
+    ),
+    (
+        theme::MOUSE_RIGHT,
+        MouseTarget::Button {
+            button: MouseButton::Right,
+        },
+    ),
+    (
+        theme::MOUSE_MIDDLE,
+        MouseTarget::Button {
+            button: MouseButton::Middle,
+        },
+    ),
+    (
+        theme::MOUSE_BACK,
+        MouseTarget::Button {
+            button: MouseButton::Back,
+        },
+    ),
+    (
+        theme::MOUSE_FORWARD,
+        MouseTarget::Button {
+            button: MouseButton::Forward,
+        },
+    ),
+    (
+        theme::MOUSE_WHEEL_UP,
+        MouseTarget::Scroll {
+            scroll: ScrollDir::Up,
+        },
+    ),
+    (
+        theme::MOUSE_WHEEL_DOWN,
+        MouseTarget::Scroll {
+            scroll: ScrollDir::Down,
+        },
+    ),
 ];
 
 /// iced 0.13 has no flow layout, so the chips wrap in two fixed rows.
@@ -106,12 +141,18 @@ fn automation_warning<'a>() -> Element<'a, Message> {
 /// worse.
 pub fn hold_repeat_state(action: Option<&Action>) -> HoldRepeat {
     match action {
-        Some(Action::Key { .. }) => HoldRepeat { on: false, enabled: true },
+        Some(Action::Key { .. }) => HoldRepeat {
+            on: false,
+            enabled: true,
+        },
         Some(Action::HoldRepeat { inner, .. }) => HoldRepeat {
             on: true,
             enabled: matches!(inner.as_ref(), Action::Key { .. }),
         },
-        _ => HoldRepeat { on: false, enabled: false },
+        _ => HoldRepeat {
+            on: false,
+            enabled: false,
+        },
     }
 }
 
@@ -144,11 +185,11 @@ fn empty_state(app: &App) -> Element<'_, Message> {
         );
     }
     container(body)
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .align_x(Alignment::Center)
-    .align_y(Alignment::Center)
-    .into()
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(Alignment::Center)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 fn readout<'a>(action: Option<&Action>, profiles: &[ProfileRow]) -> Element<'a, Message> {
@@ -358,13 +399,10 @@ pub fn inspector(app: &App) -> Element<'_, Message> {
                 .on_press(Message::ClearBinding)
                 .style(danger_text_button);
 
-            column![
-                scrollable(panel).height(Length::Fill),
-                clear,
-            ]
-            .spacing(theme::SPACE_MD)
-            .height(Length::Fill)
-            .into()
+            column![scrollable(panel).height(Length::Fill), clear,]
+                .spacing(theme::SPACE_MD)
+                .height(Length::Fill)
+                .into()
         }
     };
 
@@ -379,12 +417,13 @@ pub fn inspector(app: &App) -> Element<'_, Message> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opentartarus_core::types::{
-        Action, KeyToken, MouseButton, MouseTarget,
-    };
+    use opentartarus_core::types::{Action, KeyToken, MouseButton, MouseTarget};
 
     fn key(token: KeyToken) -> Action {
-        Action::Key { key: token, modifiers: vec![] }
+        Action::Key {
+            key: token,
+            modifiers: vec![],
+        }
     }
 
     #[test]
@@ -396,7 +435,9 @@ mod tests {
     fn a_bound_key_reads_as_its_label() {
         assert_eq!(bind_readout(Some(&key(KeyToken::Q)), &[]), "Q");
         let mouse = Action::Mouse {
-            target: MouseTarget::Button { button: MouseButton::Left },
+            target: MouseTarget::Button {
+                button: MouseButton::Left,
+            },
         };
         assert_eq!(bind_readout(Some(&mouse), &[]), theme::MOUSE_LEFT);
     }
@@ -422,7 +463,9 @@ mod tests {
         assert!(!hold_repeat_state(Some(&macro_action)).enabled);
 
         let mouse = Action::Mouse {
-            target: MouseTarget::Button { button: MouseButton::Right },
+            target: MouseTarget::Button {
+                button: MouseButton::Right,
+            },
         };
         assert!(!hold_repeat_state(Some(&mouse)).enabled);
 
@@ -445,7 +488,10 @@ mod tests {
     #[test]
     fn the_held_key_chips_are_the_three_bare_modifiers_with_distinct_labels() {
         let keys: Vec<KeyToken> = HELD_KEYS.iter().map(|(_, key)| *key).collect();
-        assert_eq!(keys, vec![KeyToken::LeftShift, KeyToken::LeftCtrl, KeyToken::LeftAlt]);
+        assert_eq!(
+            keys,
+            vec![KeyToken::LeftShift, KeyToken::LeftCtrl, KeyToken::LeftAlt]
+        );
         let mut labels: Vec<&str> = HELD_KEYS.iter().map(|(label, _)| *label).collect();
         labels.sort_unstable();
         labels.dedup();
@@ -491,7 +537,13 @@ mod tests {
             profile: "deleted".into(),
         };
         assert_eq!(bind_readout(Some(&gone), &rows), "Switch to deleted");
-        assert_eq!(bind_readout(Some(&Action::NextProfile), &rows), "Next profile");
-        assert!(!hold_repeat_state(Some(&jump)).enabled, "a switch cannot repeat");
+        assert_eq!(
+            bind_readout(Some(&Action::NextProfile), &rows),
+            "Next profile"
+        );
+        assert!(
+            !hold_repeat_state(Some(&jump)).enabled,
+            "a switch cannot repeat"
+        );
     }
 }

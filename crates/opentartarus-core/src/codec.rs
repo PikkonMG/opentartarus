@@ -54,7 +54,8 @@ mod codec_tests {
     fn reject_oversize() {
         let huge = vec![0u8; (IPC_MAX_MESSAGE_BYTES as usize) + 1];
         assert_eq!(encode_frame(&huge).unwrap_err(), ErrorCode::InvalidProfile);
-        let mut buf = ((IPC_MAX_MESSAGE_BYTES + 1) as u32).to_le_bytes().to_vec();
+        let oversize_len = IPC_MAX_MESSAGE_BYTES + 1;
+        let mut buf = oversize_len.to_le_bytes().to_vec();
         buf.extend_from_slice(&huge);
         assert_eq!(decode_frame(&buf).unwrap_err(), ErrorCode::InvalidProfile);
     }

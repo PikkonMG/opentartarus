@@ -309,11 +309,7 @@ mod tests {
 
     #[test]
     fn profile_list_order_is_pack_order() {
-        let ids = vec![
-            "path-of-exile".into(),
-            "default".into(),
-            "dota-2".into(),
-        ];
+        let ids = vec!["path-of-exile".into(), "default".into(), "dota-2".into()];
         assert_eq!(
             profile_row_order(&ids),
             vec!["default", "dota-2", "path-of-exile"]
@@ -376,7 +372,10 @@ mod tests {
     #[test]
     fn the_row_tables_agree_with_the_twenty_face_keys() {
         assert_eq!(GRID_ROW_LENGTHS.iter().sum::<usize>(), GRID_ROW_KEYS.len());
-        assert!(!GRID_ROW_KEYS.contains(&KeyId::Kp20), "kp20 is the thumb key");
+        assert!(
+            !GRID_ROW_KEYS.contains(&KeyId::Kp20),
+            "kp20 is the thumb key"
+        );
         let face_keys = GRID_ROW_KEYS.len() + 1;
         assert_eq!(face_keys, 20, "the pad has twenty numbered keys");
     }

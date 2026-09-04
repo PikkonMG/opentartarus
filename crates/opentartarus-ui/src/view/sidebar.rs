@@ -40,7 +40,11 @@ pub fn profile_list(app: &App) -> Element<'_, Message> {
         .spacing(theme::SPACE_SM)
         .align_y(Alignment::Center);
 
-        let style = if selected { selected_row_button } else { row_button };
+        let style = if selected {
+            selected_row_button
+        } else {
+            row_button
+        };
         let select = button(entry)
             .width(Length::Fill)
             .padding([theme::SPACE_XS, theme::SPACE_MD])
@@ -149,17 +153,26 @@ mod tests {
     fn only_custom_rows_offer_delete_and_only_shipped_rows_offer_revert() {
         let mut shipped = row("dota-2", true, None);
         shipped.can_revert = true;
-        assert!(!row_is_deletable(&shipped), "a shipped profile is never deletable");
+        assert!(
+            !row_is_deletable(&shipped),
+            "a shipped profile is never deletable"
+        );
 
         let mut custom = row("my-raid-layout", false, None);
         custom.can_delete = true;
         assert!(row_is_deletable(&custom));
-        assert!(!custom.can_revert, "nothing shipped to revert a custom profile to");
+        assert!(
+            !custom.can_revert,
+            "nothing shipped to revert a custom profile to"
+        );
     }
 
     #[test]
     fn a_profile_without_a_colour_falls_back_to_the_faint_swatch() {
-        assert_eq!(profile_swatch_color(&row("default", false, None)), FALLBACK_SWATCH);
+        assert_eq!(
+            profile_swatch_color(&row("default", false, None)),
+            FALLBACK_SWATCH
+        );
         assert_eq!(
             profile_swatch_color(&row("x", false, Some([1, 2, 3]))),
             [1, 2, 3]
@@ -177,12 +190,18 @@ mod tests {
         };
 
         let active = row("dota-2", true, None);
-        assert!(row_is_selected(&app, &active), "the applied profile is selected");
+        assert!(
+            row_is_selected(&app, &active),
+            "the applied profile is selected"
+        );
 
         let other = row("dota-2", false, None);
         assert!(!row_is_selected(&app, &other));
 
         app.selected_profile_id = Some("dota-2".into());
-        assert!(row_is_selected(&app, &other), "the clicked profile is selected");
+        assert!(
+            row_is_selected(&app, &other),
+            "the clicked profile is selected"
+        );
     }
 }

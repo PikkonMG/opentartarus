@@ -436,8 +436,17 @@ mod tests {
     #[test]
     fn a_bare_modifier_key_sends_the_same_code_the_modifier_does() {
         use crate::types::Modifier;
-        assert_eq!(token_to_evdev(KeyToken::LeftShift), modifier_to_evdev(Modifier::Shift));
-        assert_eq!(token_to_evdev(KeyToken::LeftCtrl), modifier_to_evdev(Modifier::Ctrl));
-        assert_eq!(token_to_evdev(KeyToken::LeftAlt), modifier_to_evdev(Modifier::Alt));
+        assert_eq!(
+            token_to_evdev(KeyToken::LeftShift),
+            modifier_to_evdev(Modifier::Shift)
+        );
+        assert_eq!(
+            token_to_evdev(KeyToken::LeftCtrl),
+            modifier_to_evdev(Modifier::Ctrl)
+        );
+        assert_eq!(
+            token_to_evdev(KeyToken::LeftAlt),
+            modifier_to_evdev(Modifier::Alt)
+        );
     }
 }

@@ -281,14 +281,24 @@ mod tests {
         let first = profile_id_for_name(&long, &[]);
         assert!(valid_id(&first), "trimmed base must be a valid id");
         let second = profile_id_for_name(&long, std::slice::from_ref(&first));
-        assert!(valid_id(&second), "suffixed id must still be valid: {second}");
+        assert!(
+            valid_id(&second),
+            "suffixed id must still be valid: {second}"
+        );
         assert!(second.ends_with("-2"));
         assert!(second.len() <= PROFILE_ID_MAX_LEN);
     }
 
     #[test]
     fn every_generated_id_passes_the_same_rule_profiles_are_validated_by() {
-        for name in ["Default", "Über Setup", "123", "a-b-c", "Trailing-", "-Leading"] {
+        for name in [
+            "Default",
+            "Über Setup",
+            "123",
+            "a-b-c",
+            "Trailing-",
+            "-Leading",
+        ] {
             let id = profile_id_for_name(name, &[]);
             assert!(valid_id(&id), "{name:?} produced invalid id {id:?}");
         }
@@ -366,7 +376,10 @@ mod tests {
     #[test]
     fn a_setup_note_must_be_short_and_not_blank() {
         let mut p: Profile = serde_json::from_str(lol_json()).unwrap();
-        assert_eq!(p.setup_note, None, "the league profile needs no in-game step");
+        assert_eq!(
+            p.setup_note, None,
+            "the league profile needs no in-game step"
+        );
         p.setup_note = Some("Add Home as a second key for Crouch.".into());
         assert!(p.validate().is_ok());
         p.setup_note = Some("   ".into());

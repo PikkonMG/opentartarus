@@ -1,8 +1,8 @@
 use crate::app::{App, Message, Phase};
 use crate::theme;
 use crate::view::widgets::{
-    app_menu_button, close_control_button, dot, hairline_color, header_container,
-    quiet_button, window_control_button, window_glyph_color,
+    app_menu_button, close_control_button, dot, hairline_color, header_container, quiet_button,
+    window_control_button, window_glyph_color,
 };
 use crate::view::window_icon::{self, WindowGlyph};
 use iced::widget::{button, container, mouse_area, row, text};

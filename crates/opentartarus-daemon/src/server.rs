@@ -32,10 +32,7 @@ pub fn bind_exclusive(socket: &Path) -> io::Result<UnixListener> {
     if socket.exists() {
         match std::os::unix::net::UnixStream::connect(socket) {
             Ok(_) => {
-                return Err(io::Error::new(
-                    ErrorKind::AddrInUse,
-                    "already_running",
-                ));
+                return Err(io::Error::new(ErrorKind::AddrInUse, "already_running"));
             }
             Err(err) if err.kind() == ErrorKind::PermissionDenied => return Err(err),
             Err(_) => {
@@ -196,22 +193,22 @@ fn after_request<L: LightingClient>(
                 }
             }
         }
-        Some(Method::StopRecord) if ok => {
-            if value
-                .pointer("/result/cancelled")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                emit_event(
-                    events,
-                    EventMethod::RecordCancelled,
-                    json!({ "reason": "user" }),
-                );
-            }
-        }
-        Some(Method::SetBinding | Method::ClearBinding | Method::SetLighting | Method::RevertProfile)
-            if ok =>
+        Some(Method::StopRecord)
+            if ok
+                && value
+                    .pointer("/result/cancelled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false) =>
         {
+            emit_event(
+                events,
+                EventMethod::RecordCancelled,
+                json!({ "reason": "user" }),
+            );
+        }
+        Some(
+            Method::SetBinding | Method::ClearBinding | Method::SetLighting | Method::RevertProfile,
+        ) if ok => {
             if let Some(id) = value.pointer("/result/id").and_then(Value::as_str) {
                 emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
             }
@@ -299,7 +296,11 @@ fn encode_wire_error(id: String, error: WireError) -> Vec<u8> {
     serde_json::to_vec(&msg).expect("ResponseMsg is serializable")
 }
 
-fn encode_response(id: String, result: Result<Value, ErrorCode>, method: Option<Method>) -> Vec<u8> {
+fn encode_response(
+    id: String,
+    result: Result<Value, ErrorCode>,
+    method: Option<Method>,
+) -> Vec<u8> {
     let msg = match result {
         Ok(value) => ResponseMsg {
             r#type: ResTag,

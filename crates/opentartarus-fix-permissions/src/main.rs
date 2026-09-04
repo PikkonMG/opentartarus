@@ -21,11 +21,7 @@ fn main() -> ExitCode {
 fn run() -> Result<(), HelperError> {
     let user = resolve_user_from_pkexec_uid()?;
     run_checked("groupadd", &["-f", GROUP_NAME], HelperError::GroupAdd)?;
-    run_checked(
-        "usermod",
-        &["-aG", GROUP_NAME, &user],
-        HelperError::UserMod,
-    )?;
+    run_checked("usermod", &["-aG", GROUP_NAME, &user], HelperError::UserMod)?;
     write_udev_rules_if_missing()?;
     run_checked(
         "udevadm",

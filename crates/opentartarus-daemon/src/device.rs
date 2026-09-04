@@ -143,7 +143,10 @@ pub fn parse_fuser_verbose(text: &str) -> Vec<String> {
         {
             continue;
         }
-        let rest = trimmed.split_once(':').map(|(_, rest)| rest).unwrap_or(trimmed);
+        let rest = trimmed
+            .split_once(':')
+            .map(|(_, rest)| rest)
+            .unwrap_or(trimmed);
         let mut parts = rest.split_whitespace();
         let Some(_user) = parts.next() else {
             continue;
@@ -590,10 +593,7 @@ H: Handlers=sysrq kbd event273
             grab_conflict_message("Permission denied (os error 13)"),
             ErrorCode::Permission
         );
-        assert_eq!(
-            grab_conflict_message("EACCES"),
-            ErrorCode::Permission
-        );
+        assert_eq!(grab_conflict_message("EACCES"), ErrorCode::Permission);
     }
 
     #[test]
@@ -657,11 +657,17 @@ H: Handlers=sysrq kbd event273
             ErrorCode::NotFound
         );
         assert_eq!(
-            classify_device_io(DeviceIoKind::EvdevOpen, "No such file or directory (os error 2)"),
+            classify_device_io(
+                DeviceIoKind::EvdevOpen,
+                "No such file or directory (os error 2)"
+            ),
             ErrorCode::Permission
         );
         assert_ne!(
-            classify_device_io(DeviceIoKind::EvdevOpen, "No such file or directory (os error 2)"),
+            classify_device_io(
+                DeviceIoKind::EvdevOpen,
+                "No such file or directory (os error 2)"
+            ),
             ErrorCode::NotFound
         );
         let missing = device_ui_state(DetectStatus::Missing, None, false);
@@ -672,7 +678,10 @@ H: Handlers=sysrq kbd event273
     #[test]
     fn uinput_busy_is_permission_not_grab_conflict() {
         assert_eq!(
-            classify_device_io(DeviceIoKind::Uinput, "Device or resource busy (os error 16)"),
+            classify_device_io(
+                DeviceIoKind::Uinput,
+                "Device or resource busy (os error 16)"
+            ),
             ErrorCode::Permission
         );
         assert_ne!(
@@ -686,7 +695,10 @@ H: Handlers=sysrq kbd event273
         let holders = parse_fuser_verbose(FUSER_OPENRAZER);
         assert_eq!(holders, vec!["openrazer-daemo".to_string()]);
         assert_eq!(busy_decision(&holders), BusyDecision::Share);
-        assert_eq!(display_holder_name("openrazer-daemo"), OPENRAZER_DAEMON_NAME);
+        assert_eq!(
+            display_holder_name("openrazer-daemo"),
+            OPENRAZER_DAEMON_NAME
+        );
     }
 
     #[test]
@@ -765,7 +777,14 @@ H: Handlers=sysrq kbd event273
         assert!(!snapshot_changed(&permission, &permission));
         assert_eq!(scan_interval_ms(false), SCAN_INTERVAL_MISSING_MS);
         assert_eq!(scan_interval_ms(true), SCAN_INTERVAL_ACTIVE_MS);
-        assert!(SCAN_INTERVAL_MISSING_MS > SCAN_INTERVAL_ACTIVE_MS);
+        // Read through the function, not the two constants: comparing the
+        // constants directly folds to a fixed value at compile time and
+        // stops being a test at all.
+        let [missing_ms, active_ms] = [scan_interval_ms(false), scan_interval_ms(true)];
+        assert!(
+            missing_ms > active_ms,
+            "an absent pad must be polled less often than a live one"
+        );
     }
 
     #[test]
@@ -778,7 +797,10 @@ H: Handlers=sysrq kbd event273
             parse_hid_bus_id("0003:1532:022b.001a"),
             Some((USB_VID_RAZER, USB_PID_TARTARUS_V2))
         );
-        assert_eq!(parse_hid_bus_id("0003:1532:008F.0002"), Some((USB_VID_RAZER, USB_PID_NAGA_PRO_1)));
+        assert_eq!(
+            parse_hid_bus_id("0003:1532:008F.0002"),
+            Some((USB_VID_RAZER, USB_PID_NAGA_PRO_1))
+        );
         assert!(classify_input_id(USB_VID_RAZER, USB_PID_NAGA_PRO_1).is_none());
     }
 }

@@ -1,6 +1,4 @@
-use opentartarus_core::constants::{
-    USB_PID_TARTARUS_PRO, USB_PID_TARTARUS_V2, USB_VID_RAZER,
-};
+use opentartarus_core::constants::{USB_PID_TARTARUS_PRO, USB_PID_TARTARUS_V2, USB_VID_RAZER};
 use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::{EventMethod, Method};
 use opentartarus_core::keymap::{mouse_button_to_evdev, EV_KEY, EV_REL, REL_WHEEL};
@@ -17,7 +15,6 @@ use opentartarus_daemon::device::{
     snapshot_changed, BusyDecision, DetectStatus, Detected, DeviceIoKind, DeviceUiState,
 };
 use opentartarus_daemon::handler::{handle_request, DaemonState};
-use opentartarus_daemon::{daemon_lighting, set_daemon_lighting_usb, DaemonLighting};
 use opentartarus_daemon::perms::{probe_evdev_readable, probe_uinput};
 use opentartarus_daemon::playback::{
     commit_if_engine_replaced, remap_physical_event, tick_engine, EngineEpoch,
@@ -28,6 +25,7 @@ use opentartarus_daemon::tray::{
     spawn_tray, tray_name_from_applied_params, tray_name_from_profile_id, TrayCmd,
 };
 use opentartarus_daemon::uinput_sink::{token_from_evdev, UinputSink};
+use opentartarus_daemon::{daemon_lighting, set_daemon_lighting_usb, DaemonLighting};
 use opentartarus_daemon::{log, tray};
 use serde_json::json;
 use std::io::ErrorKind;
@@ -141,7 +139,7 @@ async fn run() -> Result<(), ErrorCode> {
     };
 
     let found = pick_first(enumerate_tartarus());
-    let status = detect_status(found.as_ref(), |path| probe_evdev_readable(path));
+    let status = detect_status(found.as_ref(), probe_evdev_readable);
     let snapshot = device_ui_state(status, found.as_ref().map(|detected| detected.model), false);
     let device_present = snapshot.present;
     let model = snapshot.model;
@@ -338,7 +336,7 @@ fn device_loop(
 
         if grabbed.is_empty() {
             let detected = pick_first(enumerate_tartarus());
-            let status = detect_status(detected.as_ref(), |path| probe_evdev_readable(path));
+            let status = detect_status(detected.as_ref(), probe_evdev_readable);
             match (status, detected) {
                 (DetectStatus::Present, Some(detected)) => {
                     match grab_nodes(grab_targets(&detected)) {
@@ -373,11 +371,8 @@ fn device_loop(
                     }
                 }
                 (DetectStatus::Permission, Some(detected)) => {
-                    let next = device_ui_state(
-                        DetectStatus::Permission,
-                        Some(detected.model),
-                        false,
-                    );
+                    let next =
+                        device_ui_state(DetectStatus::Permission, Some(detected.model), false);
                     publish_idle_detect(
                         &state,
                         &events,
@@ -502,7 +497,10 @@ fn publish_idle_detect(
     pid: Option<u16>,
     error: Option<GrabFail>,
 ) {
-    if last.as_ref().is_some_and(|prev| !snapshot_changed(prev, &next)) {
+    if last
+        .as_ref()
+        .is_some_and(|prev| !snapshot_changed(prev, &next))
+    {
         return;
     }
     let mut st = state.lock().expect("daemon state");
@@ -531,7 +529,11 @@ fn publish_idle_detect(
             (None, false) => fail.os.clone(),
             (None, true) => String::new(),
         };
-        let os_ref = if os.is_empty() { None } else { Some(os.as_str()) };
+        let os_ref = if os.is_empty() {
+            None
+        } else {
+            Some(os.as_str())
+        };
         log::write(&fail.code.log_line(os_ref));
         emit_event(
             events,
@@ -573,8 +575,9 @@ fn grab_nodes(nodes: &[PathBuf]) -> Result<Vec<evdev::Device>, GrabFail> {
                 let holders = lookup_event_holders(path);
                 match busy_decision(&holders) {
                     BusyDecision::Share => {
-                        let device = evdev::Device::open(path)
-                            .map_err(|open_err| grab_fail(DeviceIoKind::EvdevOpen, open_err, None))?;
+                        let device = evdev::Device::open(path).map_err(|open_err| {
+                            grab_fail(DeviceIoKind::EvdevOpen, open_err, None)
+                        })?;
                         let _ = device.set_nonblocking(true);
                         devices.push(device);
                     }
@@ -630,14 +633,14 @@ fn on_device_vanished(
     events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
 ) {
     let mut st = state.lock().expect("daemon state");
-    if let Some(outcome) = st.recorder.on_disconnect() {
-        if let opentartarus_core::record::RecordOutcome::Cancelled { reason } = outcome {
-            emit_event(
-                events,
-                EventMethod::RecordCancelled,
-                json!({ "reason": record_reason_wire(reason) }),
-            );
-        }
+    if let Some(opentartarus_core::record::RecordOutcome::Cancelled { reason }) =
+        st.recorder.on_disconnect()
+    {
+        emit_event(
+            events,
+            EventMethod::RecordCancelled,
+            json!({ "reason": record_reason_wire(reason) }),
+        );
     }
     st.device_present = false;
     st.model = None;
@@ -660,14 +663,14 @@ fn poll_record_timeout<L: LightingClient>(
     events: &broadcast::Sender<opentartarus_core::ipc::EventMsg>,
 ) {
     let mut st = state.lock().expect("daemon state");
-    if let Some(outcome) = st.recorder.on_timeout(now_ms()) {
-        if let opentartarus_core::record::RecordOutcome::Cancelled { reason } = outcome {
-            emit_event(
-                events,
-                EventMethod::RecordCancelled,
-                json!({ "reason": record_reason_wire(reason) }),
-            );
-        }
+    if let Some(opentartarus_core::record::RecordOutcome::Cancelled { reason }) =
+        st.recorder.on_timeout(now_ms())
+    {
+        emit_event(
+            events,
+            EventMethod::RecordCancelled,
+            json!({ "reason": record_reason_wire(reason) }),
+        );
     }
 }
 
@@ -727,18 +730,15 @@ fn record_params_from_event(ev: &RawEvent) -> Option<serde_json::Value> {
 }
 
 fn mouse_button_from_code(code: u16) -> Option<MouseButton> {
-    for button in [
+    [
         MouseButton::Left,
         MouseButton::Right,
         MouseButton::Middle,
         MouseButton::Back,
         MouseButton::Forward,
-    ] {
-        if mouse_button_to_evdev(button) == code {
-            return Some(button);
-        }
-    }
-    None
+    ]
+    .into_iter()
+    .find(|&button| mouse_button_to_evdev(button) == code)
 }
 
 fn update_lighting_usb(lighting: &mut DaemonLighting, ids: Option<(u16, u16)>) {

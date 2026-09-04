@@ -18,5 +18,8 @@ fn tartarus_v2_and_openrazer_sysfs() {
             }
         }
     }
-    assert!(brightness, "expected OpenRazer matrix_brightness on V2 iface");
+    assert!(
+        brightness,
+        "expected OpenRazer matrix_brightness on V2 iface"
+    );
 }
