@@ -78,13 +78,6 @@ mod tests {
         }
     }
 
-    const WOW_FFXIV_THUMBS: [(KeyId, KeyToken); 4] = [
-        (KeyId::ThumbN, KeyToken::W),
-        (KeyId::ThumbS, KeyToken::S),
-        (KeyId::ThumbW, KeyToken::A),
-        (KeyId::ThumbE, KeyToken::D),
-    ];
-
     const WASD_THUMBS: [(KeyId, KeyToken); 4] = [
         (KeyId::ThumbN, KeyToken::W),
         (KeyId::ThumbW, KeyToken::A),
@@ -150,35 +143,71 @@ mod tests {
         }
     }
 
+    // Razer's own layout: the left of a keyboard, arrows on the thumb pad.
+    // Every game's defaults work with it and nothing needs setting up.
+    #[test]
+    fn default_layout_bindings_match_spec() {
+        let p = shipped_profile("default").unwrap();
+        assert_eq!(p.game, GameId::Default);
+        assert_key_bindings(
+            &p,
+            &[
+            (KeyId::Kp01, KeyToken::Num1),
+            (KeyId::Kp02, KeyToken::Num2),
+            (KeyId::Kp03, KeyToken::Num3),
+            (KeyId::Kp04, KeyToken::Num4),
+            (KeyId::Kp05, KeyToken::Num5),
+            (KeyId::Kp06, KeyToken::Tab),
+            (KeyId::Kp07, KeyToken::Q),
+            (KeyId::Kp08, KeyToken::W),
+            (KeyId::Kp09, KeyToken::E),
+            (KeyId::Kp10, KeyToken::R),
+            (KeyId::Kp11, KeyToken::CapsLock),
+            (KeyId::Kp12, KeyToken::A),
+            (KeyId::Kp13, KeyToken::S),
+            (KeyId::Kp14, KeyToken::D),
+            (KeyId::Kp15, KeyToken::F),
+            (KeyId::Kp16, KeyToken::LeftShift),
+            (KeyId::Kp17, KeyToken::Z),
+            (KeyId::Kp18, KeyToken::X),
+            (KeyId::Kp19, KeyToken::C),
+            (KeyId::Kp20, KeyToken::Space),
+            (KeyId::ThumbN, KeyToken::Up),
+            (KeyId::ThumbW, KeyToken::Left),
+            (KeyId::ThumbS, KeyToken::Down),
+            (KeyId::ThumbE, KeyToken::Right),
+            ],
+        );
+    }
+
     #[test]
     fn league_bindings_match_spec() {
         let p = shipped_profile("league-of-legends").unwrap();
         assert_eq!(p.game, GameId::LeagueOfLegends);
-        assert_eq!(p.bindings.len(), 20);
         assert_eq!(p.lighting.color, Some([0, 180, 255]));
         assert_key_bindings(
             &p,
             &[
-                (KeyId::Kp01, KeyToken::Q),
-                (KeyId::Kp02, KeyToken::W),
-                (KeyId::Kp03, KeyToken::E),
-                (KeyId::Kp04, KeyToken::R),
-                (KeyId::Kp05, KeyToken::D),
-                (KeyId::Kp06, KeyToken::F),
-                (KeyId::Kp07, KeyToken::Num1),
-                (KeyId::Kp08, KeyToken::Num2),
-                (KeyId::Kp09, KeyToken::Num3),
-                (KeyId::Kp10, KeyToken::Num4),
-                (KeyId::Kp11, KeyToken::Num5),
-                (KeyId::Kp12, KeyToken::Num6),
-                (KeyId::Kp13, KeyToken::B),
-                (KeyId::Kp14, KeyToken::P),
-                (KeyId::Kp15, KeyToken::Tab),
-                (KeyId::Kp16, KeyToken::Space),
-                (KeyId::Kp17, KeyToken::Y),
-                (KeyId::Kp18, KeyToken::V),
-                (KeyId::Kp19, KeyToken::A),
-                (KeyId::Kp20, KeyToken::S),
+            (KeyId::Kp01, KeyToken::Q),
+            (KeyId::Kp02, KeyToken::W),
+            (KeyId::Kp03, KeyToken::E),
+            (KeyId::Kp04, KeyToken::R),
+            (KeyId::Kp05, KeyToken::D),
+            (KeyId::Kp06, KeyToken::F),
+            (KeyId::Kp07, KeyToken::Num1),
+            (KeyId::Kp08, KeyToken::Num2),
+            (KeyId::Kp09, KeyToken::Num3),
+            (KeyId::Kp10, KeyToken::Num4),
+            (KeyId::Kp11, KeyToken::Num5),
+            (KeyId::Kp12, KeyToken::Num6),
+            (KeyId::Kp13, KeyToken::B),
+            (KeyId::Kp14, KeyToken::P),
+            (KeyId::Kp15, KeyToken::Tab),
+            (KeyId::Kp16, KeyToken::Space),
+            (KeyId::Kp17, KeyToken::Y),
+            (KeyId::Kp18, KeyToken::Num7),
+            (KeyId::Kp19, KeyToken::A),
+            (KeyId::Kp20, KeyToken::S),
             ],
         );
     }
@@ -187,29 +216,30 @@ mod tests {
     fn dota_bindings_match_spec() {
         let p = shipped_profile("dota-2").unwrap();
         assert_eq!(p.game, GameId::Dota2);
+        assert_eq!(p.lighting.color, Some([200, 40, 40]));
         assert_key_bindings(
             &p,
             &[
-                (KeyId::Kp01, KeyToken::Q),
-                (KeyId::Kp02, KeyToken::W),
-                (KeyId::Kp03, KeyToken::E),
-                (KeyId::Kp04, KeyToken::R),
-                (KeyId::Kp05, KeyToken::D),
-                (KeyId::Kp06, KeyToken::F),
-                (KeyId::Kp07, KeyToken::Z),
-                (KeyId::Kp08, KeyToken::X),
-                (KeyId::Kp09, KeyToken::C),
-                (KeyId::Kp10, KeyToken::Num1),
-                (KeyId::Kp11, KeyToken::Num2),
-                (KeyId::Kp12, KeyToken::Num3),
-                (KeyId::Kp13, KeyToken::Num4),
-                (KeyId::Kp14, KeyToken::Num5),
-                (KeyId::Kp15, KeyToken::Num6),
-                (KeyId::Kp16, KeyToken::T),
-                (KeyId::Kp17, KeyToken::G),
-                (KeyId::Kp18, KeyToken::Space),
-                (KeyId::Kp19, KeyToken::Tab),
-                (KeyId::Kp20, KeyToken::Grave),
+            (KeyId::Kp01, KeyToken::Q),
+            (KeyId::Kp02, KeyToken::W),
+            (KeyId::Kp03, KeyToken::E),
+            (KeyId::Kp04, KeyToken::R),
+            (KeyId::Kp05, KeyToken::D),
+            (KeyId::Kp06, KeyToken::F),
+            (KeyId::Kp07, KeyToken::Z),
+            (KeyId::Kp08, KeyToken::X),
+            (KeyId::Kp09, KeyToken::C),
+            (KeyId::Kp10, KeyToken::V),
+            (KeyId::Kp11, KeyToken::B),
+            (KeyId::Kp12, KeyToken::N),
+            (KeyId::Kp13, KeyToken::F4),
+            (KeyId::Kp14, KeyToken::A),
+            (KeyId::Kp15, KeyToken::S),
+            (KeyId::Kp16, KeyToken::Grave),
+            (KeyId::Kp17, KeyToken::F2),
+            (KeyId::Kp18, KeyToken::F3),
+            (KeyId::Kp19, KeyToken::Tab),
+            (KeyId::Kp20, KeyToken::F1),
             ],
         );
     }
@@ -218,36 +248,7 @@ mod tests {
     fn wow_bindings_match_spec() {
         let p = shipped_profile("world-of-warcraft").unwrap();
         assert_eq!(p.game, GameId::WorldOfWarcraft);
-        let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Num1),
-            (KeyId::Kp02, KeyToken::Num2),
-            (KeyId::Kp03, KeyToken::Num3),
-            (KeyId::Kp04, KeyToken::Num4),
-            (KeyId::Kp05, KeyToken::Num5),
-            (KeyId::Kp06, KeyToken::Num6),
-            (KeyId::Kp07, KeyToken::Num7),
-            (KeyId::Kp08, KeyToken::Num8),
-            (KeyId::Kp09, KeyToken::Num9),
-            (KeyId::Kp10, KeyToken::Num0),
-            (KeyId::Kp11, KeyToken::F1),
-            (KeyId::Kp12, KeyToken::F2),
-            (KeyId::Kp13, KeyToken::F3),
-            (KeyId::Kp14, KeyToken::F4),
-            (KeyId::Kp15, KeyToken::F5),
-            (KeyId::Kp16, KeyToken::F6),
-            (KeyId::Kp17, KeyToken::F7),
-            (KeyId::Kp18, KeyToken::F8),
-            (KeyId::Kp19, KeyToken::F9),
-            (KeyId::Kp20, KeyToken::F10),
-        ];
-        expected.extend(WOW_FFXIV_THUMBS);
-        assert_key_bindings(&p, &expected);
-    }
-
-    #[test]
-    fn ffxiv_bindings_match_spec() {
-        let p = shipped_profile("final-fantasy-xiv").unwrap();
-        assert_eq!(p.game, GameId::FinalFantasyXiv);
+        assert_eq!(p.lighting.color, Some([255, 180, 0]));
         let mut expected = vec![
             (KeyId::Kp01, KeyToken::Num1),
             (KeyId::Kp02, KeyToken::Num2),
@@ -261,16 +262,47 @@ mod tests {
             (KeyId::Kp10, KeyToken::Num0),
             (KeyId::Kp11, KeyToken::Minus),
             (KeyId::Kp12, KeyToken::Equal),
-            (KeyId::Kp13, KeyToken::E),
-            (KeyId::Kp14, KeyToken::Q),
-            (KeyId::Kp15, KeyToken::R),
-            (KeyId::Kp16, KeyToken::F),
-            (KeyId::Kp17, KeyToken::T),
-            (KeyId::Kp18, KeyToken::G),
-            (KeyId::Kp19, KeyToken::V),
-            (KeyId::Kp20, KeyToken::C),
+            (KeyId::Kp13, KeyToken::Tab),
+            (KeyId::Kp14, KeyToken::F1),
+            (KeyId::Kp15, KeyToken::F),
+            (KeyId::Kp16, KeyToken::M),
+            (KeyId::Kp17, KeyToken::B),
+            (KeyId::Kp18, KeyToken::C),
+            (KeyId::Kp19, KeyToken::Escape),
+            (KeyId::Kp20, KeyToken::Space),
         ];
-        expected.extend(WOW_FFXIV_THUMBS);
+        expected.extend(WASD_THUMBS);
+        assert_key_bindings(&p, &expected);
+    }
+
+    #[test]
+    fn ffxiv_bindings_match_spec() {
+        let p = shipped_profile("final-fantasy-xiv").unwrap();
+        assert_eq!(p.game, GameId::FinalFantasyXiv);
+        assert_eq!(p.lighting.color, Some([80, 160, 255]));
+        let mut expected = vec![
+            (KeyId::Kp01, KeyToken::Num1),
+            (KeyId::Kp02, KeyToken::Num2),
+            (KeyId::Kp03, KeyToken::Num3),
+            (KeyId::Kp04, KeyToken::Num4),
+            (KeyId::Kp05, KeyToken::Num5),
+            (KeyId::Kp06, KeyToken::Num6),
+            (KeyId::Kp07, KeyToken::Num7),
+            (KeyId::Kp08, KeyToken::Num8),
+            (KeyId::Kp09, KeyToken::Num9),
+            (KeyId::Kp10, KeyToken::Num0),
+            (KeyId::Kp11, KeyToken::Minus),
+            (KeyId::Kp12, KeyToken::Equal),
+            (KeyId::Kp13, KeyToken::Tab),
+            (KeyId::Kp14, KeyToken::F),
+            (KeyId::Kp15, KeyToken::R),
+            (KeyId::Kp16, KeyToken::M),
+            (KeyId::Kp17, KeyToken::I),
+            (KeyId::Kp18, KeyToken::J),
+            (KeyId::Kp19, KeyToken::C),
+            (KeyId::Kp20, KeyToken::Space),
+        ];
+        expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
     }
 
@@ -278,37 +310,32 @@ mod tests {
     fn poe_bindings_match_spec() {
         let p = shipped_profile("path-of-exile").unwrap();
         assert_eq!(p.game, GameId::PathOfExile);
+        assert_eq!(p.lighting.color, Some([140, 0, 0]));
         assert_key_bindings(
             &p,
             &[
-                (KeyId::Kp01, KeyToken::Num1),
-                (KeyId::Kp02, KeyToken::Num2),
-                (KeyId::Kp03, KeyToken::Num3),
-                (KeyId::Kp04, KeyToken::Num4),
-                (KeyId::Kp05, KeyToken::Num5),
-                (KeyId::Kp06, KeyToken::Q),
-                (KeyId::Kp07, KeyToken::W),
-                (KeyId::Kp08, KeyToken::E),
-                (KeyId::Kp09, KeyToken::R),
-                (KeyId::Kp10, KeyToken::T),
-                (KeyId::Kp11, KeyToken::A),
-                (KeyId::Kp12, KeyToken::S),
-                (KeyId::Kp13, KeyToken::D),
-                (KeyId::Kp14, KeyToken::F),
-                (KeyId::Kp15, KeyToken::G),
-                (KeyId::Kp16, KeyToken::Space),
-                (KeyId::Kp17, KeyToken::I),
-                (KeyId::Kp18, KeyToken::C),
-                (KeyId::Kp19, KeyToken::P),
-                (KeyId::Kp20, KeyToken::Z),
+            (KeyId::Kp01, KeyToken::Num1),
+            (KeyId::Kp02, KeyToken::Num2),
+            (KeyId::Kp03, KeyToken::Num3),
+            (KeyId::Kp04, KeyToken::Num4),
+            (KeyId::Kp05, KeyToken::Num5),
+            (KeyId::Kp06, KeyToken::Q),
+            (KeyId::Kp07, KeyToken::W),
+            (KeyId::Kp08, KeyToken::E),
+            (KeyId::Kp09, KeyToken::R),
+            (KeyId::Kp10, KeyToken::T),
+            (KeyId::Kp11, KeyToken::Tab),
+            (KeyId::Kp12, KeyToken::X),
+            (KeyId::Kp13, KeyToken::D),
+            (KeyId::Kp14, KeyToken::Z),
+            (KeyId::Kp15, KeyToken::G),
+            (KeyId::Kp16, KeyToken::Enter),
+            (KeyId::Kp17, KeyToken::I),
+            (KeyId::Kp18, KeyToken::C),
+            (KeyId::Kp19, KeyToken::P),
+            (KeyId::Kp20, KeyToken::Space),
             ],
         );
-    }
-
-    #[test]
-    fn default_is_empty_passthrough() {
-        let p = shipped_profile("default").unwrap();
-        assert!(p.bindings.is_empty());
     }
 
     #[test]
@@ -317,29 +344,29 @@ mod tests {
         assert_eq!(p.game, GameId::Overwatch2);
         assert_eq!(p.lighting.color, Some([255, 107, 53]));
         let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Q),
-            (KeyId::Kp02, KeyToken::E),
-            (KeyId::Kp03, KeyToken::F),
-            (KeyId::Kp04, KeyToken::R),
-            (KeyId::Kp05, KeyToken::V),
-            (KeyId::Kp06, KeyToken::Num1),
-            (KeyId::Kp07, KeyToken::Num2),
-            (KeyId::Kp08, KeyToken::Num3),
-            (KeyId::Kp09, KeyToken::Num4),
-            (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::C),
-            (KeyId::Kp12, KeyToken::Z),
-            (KeyId::Kp13, KeyToken::H),
-            (KeyId::Kp14, KeyToken::Tab),
-            (KeyId::Kp15, KeyToken::O),
+            (KeyId::Kp01, KeyToken::Num1),
+            (KeyId::Kp02, KeyToken::Num2),
+            (KeyId::Kp03, KeyToken::H),
+            (KeyId::Kp04, KeyToken::O),
+            (KeyId::Kp05, KeyToken::Tab),
+            (KeyId::Kp06, KeyToken::Q),
+            (KeyId::Kp07, KeyToken::E),
+            (KeyId::Kp08, KeyToken::X),
+            (KeyId::Kp09, KeyToken::R),
+            (KeyId::Kp10, KeyToken::V),
+            (KeyId::Kp11, KeyToken::F),
+            (KeyId::Kp12, KeyToken::LeftShift),
+            (KeyId::Kp13, KeyToken::LeftCtrl),
+            (KeyId::Kp14, KeyToken::C),
+            (KeyId::Kp15, KeyToken::Z),
             (KeyId::Kp16, KeyToken::Enter),
             (KeyId::Kp17, KeyToken::Escape),
+            (KeyId::Kp18, KeyToken::F1),
+            (KeyId::Kp19, KeyToken::G),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -348,29 +375,29 @@ mod tests {
         assert_eq!(p.game, GameId::Valorant);
         assert_eq!(p.lighting.color, Some([255, 70, 85]));
         let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Q),
-            (KeyId::Kp02, KeyToken::E),
-            (KeyId::Kp03, KeyToken::C),
-            (KeyId::Kp04, KeyToken::X),
-            (KeyId::Kp05, KeyToken::R),
-            (KeyId::Kp06, KeyToken::Num1),
-            (KeyId::Kp07, KeyToken::Num2),
-            (KeyId::Kp08, KeyToken::Num3),
-            (KeyId::Kp09, KeyToken::Num4),
-            (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::G),
-            (KeyId::Kp12, KeyToken::B),
-            (KeyId::Kp13, KeyToken::F),
-            (KeyId::Kp14, KeyToken::Tab),
-            (KeyId::Kp15, KeyToken::M),
-            (KeyId::Kp16, KeyToken::Enter),
-            (KeyId::Kp17, KeyToken::Escape),
+            (KeyId::Kp01, KeyToken::Num1),
+            (KeyId::Kp02, KeyToken::Num2),
+            (KeyId::Kp03, KeyToken::Num3),
+            (KeyId::Kp04, KeyToken::Num4),
+            (KeyId::Kp05, KeyToken::Tab),
+            (KeyId::Kp06, KeyToken::Q),
+            (KeyId::Kp07, KeyToken::E),
+            (KeyId::Kp08, KeyToken::C),
+            (KeyId::Kp09, KeyToken::X),
+            (KeyId::Kp10, KeyToken::R),
+            (KeyId::Kp11, KeyToken::F),
+            (KeyId::Kp12, KeyToken::LeftCtrl),
+            (KeyId::Kp13, KeyToken::LeftShift),
+            (KeyId::Kp14, KeyToken::Z),
+            (KeyId::Kp15, KeyToken::G),
+            (KeyId::Kp16, KeyToken::B),
+            (KeyId::Kp17, KeyToken::M),
+            (KeyId::Kp18, KeyToken::Enter),
+            (KeyId::Kp19, KeyToken::Escape),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -379,29 +406,29 @@ mod tests {
         assert_eq!(p.game, GameId::CounterStrike2);
         assert_eq!(p.lighting.color, Some([222, 155, 53]));
         let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Q),
-            (KeyId::Kp02, KeyToken::E),
-            (KeyId::Kp03, KeyToken::G),
-            (KeyId::Kp04, KeyToken::R),
+            (KeyId::Kp01, KeyToken::B),
+            (KeyId::Kp02, KeyToken::Tab),
+            (KeyId::Kp03, KeyToken::Y),
+            (KeyId::Kp04, KeyToken::Z),
             (KeyId::Kp05, KeyToken::F),
             (KeyId::Kp06, KeyToken::Num1),
             (KeyId::Kp07, KeyToken::Num2),
             (KeyId::Kp08, KeyToken::Num3),
             (KeyId::Kp09, KeyToken::Num4),
             (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::B),
-            (KeyId::Kp12, KeyToken::Z),
-            (KeyId::Kp13, KeyToken::X),
-            (KeyId::Kp14, KeyToken::C),
-            (KeyId::Kp15, KeyToken::Tab),
-            (KeyId::Kp16, KeyToken::Enter),
+            (KeyId::Kp11, KeyToken::Q),
+            (KeyId::Kp12, KeyToken::E),
+            (KeyId::Kp13, KeyToken::R),
+            (KeyId::Kp14, KeyToken::G),
+            (KeyId::Kp15, KeyToken::LeftCtrl),
+            (KeyId::Kp16, KeyToken::LeftShift),
             (KeyId::Kp17, KeyToken::Escape),
             (KeyId::Kp18, KeyToken::M),
+            (KeyId::Kp19, KeyToken::C),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -410,29 +437,29 @@ mod tests {
         assert_eq!(p.game, GameId::ApexLegends);
         assert_eq!(p.lighting.color, Some([218, 41, 46]));
         let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Q),
-            (KeyId::Kp02, KeyToken::Z),
-            (KeyId::Kp03, KeyToken::E),
-            (KeyId::Kp04, KeyToken::R),
-            (KeyId::Kp05, KeyToken::V),
+            (KeyId::Kp01, KeyToken::Tab),
+            (KeyId::Kp02, KeyToken::M),
+            (KeyId::Kp03, KeyToken::Z),
+            (KeyId::Kp04, KeyToken::V),
+            (KeyId::Kp05, KeyToken::X),
             (KeyId::Kp06, KeyToken::Num1),
             (KeyId::Kp07, KeyToken::Num2),
             (KeyId::Kp08, KeyToken::Num3),
             (KeyId::Kp09, KeyToken::Num4),
             (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::Tab),
-            (KeyId::Kp12, KeyToken::M),
-            (KeyId::Kp13, KeyToken::C),
-            (KeyId::Kp14, KeyToken::X),
+            (KeyId::Kp11, KeyToken::Q),
+            (KeyId::Kp12, KeyToken::E),
+            (KeyId::Kp13, KeyToken::R),
+            (KeyId::Kp14, KeyToken::C),
             (KeyId::Kp15, KeyToken::G),
             (KeyId::Kp16, KeyToken::Enter),
             (KeyId::Kp17, KeyToken::Escape),
+            (KeyId::Kp18, KeyToken::F),
+            (KeyId::Kp19, KeyToken::LeftShift),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -441,29 +468,29 @@ mod tests {
         assert_eq!(p.game, GameId::Fortnite);
         assert_eq!(p.lighting.color, Some([70, 145, 245]));
         let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Z),
-            (KeyId::Kp02, KeyToken::X),
-            (KeyId::Kp03, KeyToken::C),
-            (KeyId::Kp04, KeyToken::V),
-            (KeyId::Kp05, KeyToken::G),
+            (KeyId::Kp01, KeyToken::F),
+            (KeyId::Kp02, KeyToken::R),
+            (KeyId::Kp03, KeyToken::E),
+            (KeyId::Kp04, KeyToken::Tab),
+            (KeyId::Kp05, KeyToken::M),
             (KeyId::Kp06, KeyToken::Num1),
             (KeyId::Kp07, KeyToken::Num2),
             (KeyId::Kp08, KeyToken::Num3),
             (KeyId::Kp09, KeyToken::Num4),
             (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::F),
-            (KeyId::Kp12, KeyToken::R),
-            (KeyId::Kp13, KeyToken::E),
-            (KeyId::Kp14, KeyToken::Tab),
-            (KeyId::Kp15, KeyToken::M),
+            (KeyId::Kp11, KeyToken::Z),
+            (KeyId::Kp12, KeyToken::X),
+            (KeyId::Kp13, KeyToken::C),
+            (KeyId::Kp14, KeyToken::V),
+            (KeyId::Kp15, KeyToken::G),
             (KeyId::Kp16, KeyToken::Enter),
             (KeyId::Kp17, KeyToken::Escape),
+            (KeyId::Kp18, KeyToken::LeftShift),
+            (KeyId::Kp19, KeyToken::LeftCtrl),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -472,29 +499,27 @@ mod tests {
         assert_eq!(p.game, GameId::Diablo4);
         assert_eq!(p.lighting.color, Some([164, 32, 26]));
         let mut expected = vec![
-            (KeyId::Kp01, KeyToken::Num1),
-            (KeyId::Kp02, KeyToken::Num2),
-            (KeyId::Kp03, KeyToken::Num3),
-            (KeyId::Kp04, KeyToken::Num4),
-            (KeyId::Kp05, KeyToken::Q),
-            (KeyId::Kp06, KeyToken::T),
-            (KeyId::Kp07, KeyToken::I),
-            (KeyId::Kp08, KeyToken::C),
-            (KeyId::Kp09, KeyToken::M),
+            (KeyId::Kp01, KeyToken::C),
+            (KeyId::Kp02, KeyToken::J),
+            (KeyId::Kp03, KeyToken::O),
+            (KeyId::Kp04, KeyToken::P),
+            (KeyId::Kp05, KeyToken::Y),
+            (KeyId::Kp06, KeyToken::E),
+            (KeyId::Kp07, KeyToken::F),
+            (KeyId::Kp08, KeyToken::Z),
+            (KeyId::Kp09, KeyToken::T),
             (KeyId::Kp10, KeyToken::Tab),
-            (KeyId::Kp11, KeyToken::Z),
-            (KeyId::Kp12, KeyToken::J),
-            (KeyId::Kp13, KeyToken::S),
-            (KeyId::Kp14, KeyToken::O),
-            (KeyId::Kp15, KeyToken::P),
+            (KeyId::Kp11, KeyToken::Num1),
+            (KeyId::Kp12, KeyToken::Num2),
+            (KeyId::Kp13, KeyToken::Num3),
+            (KeyId::Kp14, KeyToken::Num4),
+            (KeyId::Kp15, KeyToken::Q),
             (KeyId::Kp16, KeyToken::Enter),
             (KeyId::Kp17, KeyToken::Escape),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -503,29 +528,21 @@ mod tests {
         assert_eq!(p.game, GameId::EldenRing);
         assert_eq!(p.lighting.color, Some([201, 168, 96]));
         let mut expected = vec![
-            (KeyId::Kp01, KeyToken::E),
-            (KeyId::Kp02, KeyToken::R),
-            (KeyId::Kp03, KeyToken::Q),
-            (KeyId::Kp04, KeyToken::F),
             (KeyId::Kp05, KeyToken::G),
-            (KeyId::Kp06, KeyToken::Num1),
-            (KeyId::Kp07, KeyToken::Num2),
-            (KeyId::Kp08, KeyToken::Num3),
-            (KeyId::Kp09, KeyToken::Num4),
-            (KeyId::Kp10, KeyToken::Num5),
-            (KeyId::Kp11, KeyToken::I),
-            (KeyId::Kp12, KeyToken::M),
-            (KeyId::Kp13, KeyToken::Tab),
-            (KeyId::Kp14, KeyToken::H),
+            (KeyId::Kp06, KeyToken::Up),
+            (KeyId::Kp07, KeyToken::Down),
+            (KeyId::Kp08, KeyToken::Left),
+            (KeyId::Kp09, KeyToken::Right),
+            (KeyId::Kp11, KeyToken::E),
+            (KeyId::Kp12, KeyToken::R),
+            (KeyId::Kp13, KeyToken::Q),
+            (KeyId::Kp14, KeyToken::F),
             (KeyId::Kp15, KeyToken::X),
-            (KeyId::Kp16, KeyToken::Enter),
             (KeyId::Kp17, KeyToken::Escape),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -549,10 +566,10 @@ mod tests {
             (KeyId::Kp13, KeyToken::F3),
             (KeyId::Kp14, KeyToken::F4),
             (KeyId::Kp15, KeyToken::V),
-            (KeyId::Kp16, KeyToken::I),
-            (KeyId::Kp17, KeyToken::M),
-            (KeyId::Kp18, KeyToken::H),
-            (KeyId::Kp19, KeyToken::Escape),
+            (KeyId::Kp16, KeyToken::Grave),
+            (KeyId::Kp17, KeyToken::X),
+            (KeyId::Kp18, KeyToken::F),
+            (KeyId::Kp19, KeyToken::F5),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
@@ -573,21 +590,21 @@ mod tests {
             (KeyId::Kp06, KeyToken::R),
             (KeyId::Kp07, KeyToken::Q),
             (KeyId::Kp08, KeyToken::E),
-            (KeyId::Kp09, KeyToken::F),
-            (KeyId::Kp10, KeyToken::G),
-            (KeyId::Kp11, KeyToken::I),
-            (KeyId::Kp12, KeyToken::M),
-            (KeyId::Kp13, KeyToken::J),
-            (KeyId::Kp14, KeyToken::K),
+            (KeyId::Kp09, KeyToken::Grave),
+            (KeyId::Kp10, KeyToken::H),
+            (KeyId::Kp11, KeyToken::X),
+            (KeyId::Kp12, KeyToken::LeftShift),
+            (KeyId::Kp13, KeyToken::I),
+            (KeyId::Kp14, KeyToken::M),
             (KeyId::Kp15, KeyToken::C),
             (KeyId::Kp16, KeyToken::Enter),
             (KeyId::Kp17, KeyToken::Escape),
+            (KeyId::Kp18, KeyToken::K),
             (KeyId::Kp20, KeyToken::Space),
+            (KeyId::Kp19, KeyToken::LeftCtrl),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
     }
 
     #[test]
@@ -611,14 +628,38 @@ mod tests {
             (KeyId::Kp13, KeyToken::T),
             (KeyId::Kp14, KeyToken::Tab),
             (KeyId::Kp15, KeyToken::Escape),
-            (KeyId::Kp16, KeyToken::F3),
-            (KeyId::Kp17, KeyToken::F5),
+            (KeyId::Kp16, KeyToken::LeftShift),
+            (KeyId::Kp17, KeyToken::LeftCtrl),
+            (KeyId::Kp18, KeyToken::F3),
+            (KeyId::Kp19, KeyToken::F5),
             (KeyId::Kp20, KeyToken::Space),
         ];
         expected.extend(WASD_THUMBS);
         assert_key_bindings(&p, &expected);
-        assert!(!p.bindings.contains_key(&KeyId::Kp18), "kp18 stays free");
-        assert!(!p.bindings.contains_key(&KeyId::Kp19), "kp19 stays free");
+    }
+
+    #[test]
+    fn a_setup_note_exists_only_where_the_game_needs_an_in_game_step() {
+        // Diablo needs a preset switched on; Elden Ring changed its layout
+        // in a patch. Every other profile works with the game's defaults.
+        let with_note = [
+            "diablo-4",
+            "elden-ring",
+        ];
+        for id in SHIPPED_IDS {
+            let p = shipped_profile(id).unwrap();
+            assert_eq!(
+                p.setup_note.is_some(),
+                with_note.contains(&id),
+                "{id}: setup note presence"
+            );
+        }
+        let noted = shipped_profile(with_note[0]).unwrap();
+        let json = serde_json::to_value(&noted).unwrap();
+        assert!(json.get("setup_note").is_some(), "a note survives a save");
+        let plain = shipped_profile("league-of-legends").unwrap();
+        let json = serde_json::to_value(&plain).unwrap();
+        assert!(json.get("setup_note").is_none(), "no note, no field written");
     }
 
     #[test]

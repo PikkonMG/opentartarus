@@ -19,17 +19,15 @@
     "kp13": { "type": "key", "key": "t", "modifiers": [] },
     "kp14": { "type": "key", "key": "tab", "modifiers": [] },
     "kp15": { "type": "key", "key": "escape", "modifiers": [] },
-    "kp16": { "type": "key", "key": "f3", "modifiers": [] },
-    "kp17": { "type": "key", "key": "f5", "modifiers": [] },
+    "kp16": { "type": "key", "key": "leftshift", "modifiers": [] },
+    "kp17": { "type": "key", "key": "leftctrl", "modifiers": [] },
+    "kp18": { "type": "key", "key": "f3", "modifiers": [] },
+    "kp19": { "type": "key", "key": "f5", "modifiers": [] },
     "kp20": { "type": "key", "key": "space", "modifiers": [] },
     "thumb_n": { "type": "key", "key": "w", "modifiers": [] },
     "thumb_w": { "type": "key", "key": "a", "modifiers": [] },
     "thumb_s": { "type": "key", "key": "s", "modifiers": [] },
     "thumb_e": { "type": "key", "key": "d", "modifiers": [] }
   },
-  "lighting": {
-    "effect": "static",
-    "brightness": 80,
-    "color": [94, 168, 64]
-  }
+  "lighting": {"effect": "static", "brightness": 80, "color": [94, 168, 64]}
 }

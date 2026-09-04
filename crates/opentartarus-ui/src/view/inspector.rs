@@ -1,14 +1,16 @@
-use crate::app::{App, Message};
+use crate::app::{App, Message, ProfileRow};
 use crate::keys::COMBO_INPUT_ID;
 use crate::theme;
 use crate::view::widgets::{
-    chip_button, danger_text_button, primary_button, quiet_button, section_label,
-    surface_container,
+    chip, danger_text_button, menu_style, pick_list_style, primary_button, quiet_button,
+    section_label, surface_container,
 };
-use iced::widget::{button, column, container, row, scrollable, text, text_input, Space};
+use iced::widget::{
+    button, column, container, pick_list, row, scrollable, text, text_input, Space,
+};
 use iced::{Alignment, Background, Border, Color, Element, Length, Theme};
 use opentartarus_core::labels::{bind_label, key_display_name, key_position_text};
-use opentartarus_core::types::{Action, MouseButton, MouseTarget, ScrollDir};
+use opentartarus_core::types::{Action, KeyToken, MouseButton, MouseTarget, ScrollDir};
 
 pub const MOUSE_TARGETS: [(&str, MouseTarget); 7] = [
     (theme::MOUSE_LEFT, MouseTarget::Button { button: MouseButton::Left }),
@@ -23,6 +25,15 @@ pub const MOUSE_TARGETS: [(&str, MouseTarget); 7] = [
 /// iced 0.13 has no flow layout, so the chips wrap in two fixed rows.
 const MOUSE_ROW_ONE: usize = 4;
 
+/// Keys the combo box cannot type, because pressing one on its own is a
+/// modifier there: offered as chips instead. Sprint, crouch and walk live
+/// on these in most games.
+pub const HELD_KEYS: [(&str, KeyToken); 3] = [
+    (theme::HELD_SHIFT, KeyToken::LeftShift),
+    (theme::HELD_CTRL, KeyToken::LeftCtrl),
+    (theme::HELD_ALT, KeyToken::LeftAlt),
+];
+
 /// What the big readout shows, and whether the hold-repeat toggle is live.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct HoldRepeat {
@@ -30,8 +41,10 @@ pub struct HoldRepeat {
     pub enabled: bool,
 }
 
-pub fn bind_readout(action: Option<&Action>) -> String {
-    let label = mouse_target_readout(action).unwrap_or_else(|| bind_label(action));
+pub fn bind_readout(action: Option<&Action>, profiles: &[ProfileRow]) -> String {
+    let label = switch_readout(action, profiles)
+        .or_else(|| mouse_target_readout(action))
+        .unwrap_or_else(|| bind_label(action));
     if label.is_empty() {
         String::from(theme::UNBOUND_PLACEHOLDER)
     } else {
@@ -56,6 +69,22 @@ fn mouse_target_readout(action: Option<&Action>) -> Option<String> {
     }
 }
 
+/// A switch key reads as the profile it jumps to, by name. A profile that
+/// has since been deleted still reads by id, so the key never looks unbound.
+fn switch_readout(action: Option<&Action>, profiles: &[ProfileRow]) -> Option<String> {
+    match action {
+        Some(Action::SwitchProfile { profile }) => {
+            let name = profiles
+                .iter()
+                .find(|row| &row.id == profile)
+                .map_or(profile.as_str(), |row| row.name.as_str());
+            Some(format!("{}{name}", theme::READOUT_SWITCH_PREFIX))
+        }
+        Some(Action::NextProfile) => Some(String::from(theme::READOUT_NEXT_PROFILE)),
+        _ => None,
+    }
+}
+
 /// Only a plain key can repeat. A hold-repeat that already wraps something
 /// else reads as on, but the toggle stays dead so the user cannot make it
 /// worse.
@@ -70,19 +99,35 @@ pub fn hold_repeat_state(action: Option<&Action>) -> HoldRepeat {
     }
 }
 
-fn empty_state<'a>() -> Element<'a, Message> {
-    container(
-        column![
-            text(theme::EMPTY_STATE_TITLE)
-                .size(theme::TEXT_HEADING)
-                .color(theme::COLOR_TEXT_DIM),
-            text(theme::EMPTY_STATE_BODY)
-                .size(theme::TEXT_BODY)
-                .color(theme::COLOR_TEXT_FAINT),
-        ]
-        .spacing(theme::SPACE_SM)
-        .align_x(Alignment::Center),
-    )
+/// Shown while no key is selected. When the active profile needs a step in
+/// the game first, that step is spelled out here, where the player looks
+/// before touching any key.
+fn empty_state(app: &App) -> Element<'_, Message> {
+    let mut body = column![
+        text(theme::EMPTY_STATE_TITLE)
+            .size(theme::TEXT_HEADING)
+            .color(theme::COLOR_TEXT_DIM),
+        text(theme::EMPTY_STATE_BODY)
+            .size(theme::TEXT_BODY)
+            .color(theme::COLOR_TEXT_FAINT),
+    ]
+    .spacing(theme::SPACE_SM)
+    .align_x(Alignment::Center);
+    if let Some(note) = &app.setup_note {
+        body = body.push(
+            column![
+                section_label(theme::LABEL_SETUP_NOTE),
+                text(note)
+                    .size(theme::TEXT_SMALL)
+                    .color(theme::COLOR_TEXT_DIM)
+                    .center(),
+            ]
+            .spacing(theme::SPACE_XS)
+            .padding([theme::SPACE_LG, 0.0])
+            .align_x(Alignment::Center),
+        );
+    }
+    container(body)
     .width(Length::Fill)
     .height(Length::Fill)
     .align_x(Alignment::Center)
@@ -90,11 +135,11 @@ fn empty_state<'a>() -> Element<'a, Message> {
     .into()
 }
 
-fn readout<'a>(action: Option<&Action>) -> Element<'a, Message> {
+fn readout<'a>(action: Option<&Action>, profiles: &[ProfileRow]) -> Element<'a, Message> {
     container(
         column![
             section_label(theme::LABEL_SENDS),
-            text(bind_readout(action)).size(theme::BIND_VALUE_TEXT),
+            text(bind_readout(action, profiles)).size(theme::BIND_VALUE_TEXT),
         ]
         .spacing(theme::SPACE_XS)
         .align_x(Alignment::Center),
@@ -156,22 +201,26 @@ fn switch<'a>(state: HoldRepeat) -> Element<'a, Message> {
 }
 
 fn mouse_chips<'a>() -> Element<'a, Message> {
-    let chip = |label: &'static str, target: MouseTarget| {
-        button(text(label).size(theme::TEXT_SMALL))
-            .padding([theme::SPACE_XS, theme::SPACE_MD])
-            .on_press(Message::MousePick(target))
-            .style(chip_button)
-    };
     let mut first = row![].spacing(theme::SPACE_XS);
     let mut second = row![].spacing(theme::SPACE_XS);
     for (index, (label, target)) in MOUSE_TARGETS.into_iter().enumerate() {
         if index < MOUSE_ROW_ONE {
-            first = first.push(chip(label, target));
+            first = first.push(chip(label, Message::MousePick(target)));
         } else {
-            second = second.push(chip(label, target));
+            second = second.push(chip(label, Message::MousePick(target)));
         }
     }
     column![section_label(theme::LABEL_MOUSE), first, second]
+        .spacing(theme::SPACE_SM)
+        .into()
+}
+
+fn held_key_chips<'a>() -> Element<'a, Message> {
+    let mut line = row![].spacing(theme::SPACE_XS);
+    for (label, key) in HELD_KEYS {
+        line = line.push(chip(label, Message::KeyPick(key)));
+    }
+    column![section_label(theme::LABEL_HELD_KEYS), line]
         .spacing(theme::SPACE_SM)
         .into()
 }
@@ -208,9 +257,34 @@ fn macro_steps<'a>(action: &Action) -> Element<'a, Message> {
     list.into()
 }
 
+/// `Next profile` as a chip, and a drop-down of every profile to jump to.
+/// A drop-down rather than chips: there are sixteen shipped profiles plus
+/// the user's own, which is too many chips for the panel.
+fn switch_profile_controls(app: &App) -> Element<'_, Message> {
+    let next = chip(theme::CHIP_NEXT_PROFILE, Message::NextProfilePick);
+    let jump = pick_list(
+        app.profile_choices(),
+        app.switch_target_choice(),
+        Message::SwitchProfilePick,
+    )
+    .placeholder(theme::PROFILE_PICK_PLACEHOLDER)
+    .text_size(theme::TEXT_SMALL)
+    .style(pick_list_style)
+    .menu_style(menu_style)
+    .width(Length::Fill);
+    column![
+        section_label(theme::LABEL_SWITCH_PROFILE),
+        row![next, jump]
+            .spacing(theme::SPACE_XS)
+            .align_y(Alignment::Center),
+    ]
+    .spacing(theme::SPACE_SM)
+    .into()
+}
+
 pub fn inspector(app: &App) -> Element<'_, Message> {
     let content: Element<'_, Message> = match app.selected_key {
-        None => empty_state(),
+        None => empty_state(app),
         Some(key_id) => {
             let action = app.selected_action();
             let state = hold_repeat_state(action.as_ref());
@@ -234,7 +308,7 @@ pub fn inspector(app: &App) -> Element<'_, Message> {
                 ]
                 .spacing(theme::SPACE_SM)
                 .align_y(Alignment::End),
-                readout(action.as_ref()),
+                readout(action.as_ref(), &app.profiles),
                 button(text(record_label).size(theme::TEXT_BODY))
                     .width(Length::Fill)
                     .padding(theme::SPACE_SM)
@@ -245,7 +319,9 @@ pub fn inspector(app: &App) -> Element<'_, Message> {
                     .size(theme::TEXT_BODY)
                     .on_input(Message::ComboChanged),
                 switch(state),
+                held_key_chips(),
                 mouse_chips(),
+                switch_profile_controls(app),
             ]
             .spacing(theme::SPACE_MD);
 
@@ -294,16 +370,16 @@ mod tests {
 
     #[test]
     fn an_unbound_key_reads_as_a_dash_not_an_empty_box() {
-        assert_eq!(bind_readout(None), theme::UNBOUND_PLACEHOLDER);
+        assert_eq!(bind_readout(None, &[]), theme::UNBOUND_PLACEHOLDER);
     }
 
     #[test]
     fn a_bound_key_reads_as_its_label() {
-        assert_eq!(bind_readout(Some(&key(KeyToken::Q))), "Q");
+        assert_eq!(bind_readout(Some(&key(KeyToken::Q)), &[]), "Q");
         let mouse = Action::Mouse {
             target: MouseTarget::Button { button: MouseButton::Left },
         };
-        assert_eq!(bind_readout(Some(&mouse)), theme::MOUSE_LEFT);
+        assert_eq!(bind_readout(Some(&mouse), &[]), theme::MOUSE_LEFT);
     }
 
     #[test]
@@ -348,11 +424,43 @@ mod tests {
     }
 
     #[test]
+    fn the_held_key_chips_are_the_three_bare_modifiers_with_distinct_labels() {
+        let keys: Vec<KeyToken> = HELD_KEYS.iter().map(|(_, key)| *key).collect();
+        assert_eq!(keys, vec![KeyToken::LeftShift, KeyToken::LeftCtrl, KeyToken::LeftAlt]);
+        let mut labels: Vec<&str> = HELD_KEYS.iter().map(|(label, _)| *label).collect();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(labels.len(), HELD_KEYS.len());
+    }
+
+    #[test]
     fn every_mouse_target_gets_exactly_one_chip() {
         assert_eq!(MOUSE_TARGETS.len(), 7);
         let mut labels: Vec<&str> = MOUSE_TARGETS.iter().map(|(label, _)| *label).collect();
         labels.sort_unstable();
         labels.dedup();
         assert_eq!(labels.len(), MOUSE_TARGETS.len(), "labels must be unique");
+    }
+
+    #[test]
+    fn a_switch_reads_as_the_profile_name_and_falls_back_to_the_id() {
+        let rows = vec![ProfileRow {
+            id: "dota-2".into(),
+            name: "Dota 2".into(),
+            is_active: false,
+            can_revert: true,
+            can_delete: false,
+            color: None,
+        }];
+        let jump = Action::SwitchProfile {
+            profile: "dota-2".into(),
+        };
+        assert_eq!(bind_readout(Some(&jump), &rows), "Switch to Dota 2");
+        let gone = Action::SwitchProfile {
+            profile: "deleted".into(),
+        };
+        assert_eq!(bind_readout(Some(&gone), &rows), "Switch to deleted");
+        assert_eq!(bind_readout(Some(&Action::NextProfile), &rows), "Next profile");
+        assert!(!hold_repeat_state(Some(&jump)).enabled, "a switch cannot repeat");
     }
 }

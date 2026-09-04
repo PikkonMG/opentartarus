@@ -203,6 +203,9 @@ const ALL_KEY_TOKENS: &[KeyToken] = &[
     KeyToken::VolumeUp,
     KeyToken::VolumeDown,
     KeyToken::Mute,
+    KeyToken::LeftShift,
+    KeyToken::LeftCtrl,
+    KeyToken::LeftAlt,
 ];
 
 const ALL_MODIFIERS: &[Modifier] = &[

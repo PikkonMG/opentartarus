@@ -14,20 +14,16 @@
     "kp08": { "type": "key", "key": "e", "modifiers": [] },
     "kp09": { "type": "key", "key": "r", "modifiers": [] },
     "kp10": { "type": "key", "key": "t", "modifiers": [] },
-    "kp11": { "type": "key", "key": "a", "modifiers": [] },
-    "kp12": { "type": "key", "key": "s", "modifiers": [] },
+    "kp11": { "type": "key", "key": "tab", "modifiers": [] },
+    "kp12": { "type": "key", "key": "x", "modifiers": [] },
     "kp13": { "type": "key", "key": "d", "modifiers": [] },
-    "kp14": { "type": "key", "key": "f", "modifiers": [] },
+    "kp14": { "type": "key", "key": "z", "modifiers": [] },
     "kp15": { "type": "key", "key": "g", "modifiers": [] },
-    "kp16": { "type": "key", "key": "space", "modifiers": [] },
+    "kp16": { "type": "key", "key": "enter", "modifiers": [] },
     "kp17": { "type": "key", "key": "i", "modifiers": [] },
     "kp18": { "type": "key", "key": "c", "modifiers": [] },
     "kp19": { "type": "key", "key": "p", "modifiers": [] },
-    "kp20": { "type": "key", "key": "z", "modifiers": [] }
+    "kp20": { "type": "key", "key": "space", "modifiers": [] }
   },
-  "lighting": {
-    "effect": "static",
-    "brightness": 80,
-    "color": [140, 0, 0]
-  }
+  "lighting": {"effect": "static", "brightness": 80, "color": [140, 0, 0]}
 }

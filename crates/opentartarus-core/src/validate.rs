@@ -9,6 +9,8 @@ use std::collections::BTreeMap;
 
 const PROFILE_ID_MAX_LEN: usize = 64;
 const PROFILE_NAME_MAX_LEN: usize = 64;
+/// A setup note is one short instruction, not a manual.
+const SETUP_NOTE_MAX_LEN: usize = 240;
 const BRIGHTNESS_MAX: u8 = 100;
 const MODIFIERS_MAX: usize = 4;
 
@@ -25,6 +27,7 @@ impl Profile {
         }
         validate_device_models(&self.device_models)?;
         validate_lighting(&self.lighting)?;
+        validate_setup_note(self.setup_note.as_deref())?;
         for action in self.bindings.values() {
             validate_action(action)?;
         }
@@ -121,6 +124,20 @@ fn valid_name(name: &str) -> bool {
     (1..=PROFILE_NAME_MAX_LEN).contains(&count)
 }
 
+fn validate_setup_note(note: Option<&str>) -> Result<(), ErrorCode> {
+    match note {
+        None => Ok(()),
+        Some(text) => {
+            let count = text.trim().chars().count();
+            if (1..=SETUP_NOTE_MAX_LEN).contains(&count) {
+                Ok(())
+            } else {
+                Err(ErrorCode::InvalidProfile)
+            }
+        }
+    }
+}
+
 fn validate_device_models(models: &[DeviceModel]) -> Result<(), ErrorCode> {
     if models.is_empty() {
         return Err(ErrorCode::InvalidProfile);
@@ -180,6 +197,14 @@ fn validate_action(action: &Action) -> Result<(), ErrorCode> {
         Action::Key { modifiers, .. } => validate_modifiers(modifiers),
         Action::Macro { steps } => validate_macro(steps),
         Action::Mouse { .. } => Ok(()),
+        Action::SwitchProfile { profile } => {
+            if valid_id(profile) {
+                Ok(())
+            } else {
+                Err(ErrorCode::InvalidProfile)
+            }
+        }
+        Action::NextProfile => Ok(()),
         Action::HoldRepeat { inner, rate_ms } => {
             if *rate_ms < HOLD_REPEAT_RATE_MIN_MS || *rate_ms > HOLD_REPEAT_RATE_MAX_MS {
                 return Err(ErrorCode::InvalidProfile);
@@ -302,6 +327,51 @@ mod tests {
                 rate_ms: 40,
             },
         );
+        assert_eq!(p.validate().unwrap_err(), ErrorCode::InvalidProfile);
+    }
+
+    #[test]
+    fn a_switch_target_must_be_a_well_formed_id_and_next_needs_nothing() {
+        let mut p: Profile = serde_json::from_str(lol_json()).unwrap();
+        p.bindings.insert(
+            KeyId::Kp01,
+            Action::SwitchProfile {
+                profile: "dota-2".into(),
+            },
+        );
+        assert!(p.validate().is_ok());
+        p.bindings.insert(
+            KeyId::Kp01,
+            Action::SwitchProfile {
+                profile: "Dota 2".into(),
+            },
+        );
+        assert_eq!(p.validate().unwrap_err(), ErrorCode::InvalidProfile);
+        p.bindings.insert(KeyId::Kp01, Action::NextProfile);
+        assert!(p.validate().is_ok());
+        p.bindings.insert(
+            KeyId::Kp01,
+            Action::HoldRepeat {
+                inner: Box::new(Action::NextProfile),
+                rate_ms: 40,
+            },
+        );
+        assert_eq!(
+            p.validate().unwrap_err(),
+            ErrorCode::InvalidProfile,
+            "a switch cannot hold-repeat"
+        );
+    }
+
+    #[test]
+    fn a_setup_note_must_be_short_and_not_blank() {
+        let mut p: Profile = serde_json::from_str(lol_json()).unwrap();
+        assert_eq!(p.setup_note, None, "the league profile needs no in-game step");
+        p.setup_note = Some("Add Home as a second key for Crouch.".into());
+        assert!(p.validate().is_ok());
+        p.setup_note = Some("   ".into());
+        assert_eq!(p.validate().unwrap_err(), ErrorCode::InvalidProfile);
+        p.setup_note = Some("x".repeat(SETUP_NOTE_MAX_LEN + 1));
         assert_eq!(p.validate().unwrap_err(), ErrorCode::InvalidProfile);
     }
 

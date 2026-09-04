@@ -315,6 +315,9 @@ pub fn token_to_evdev(token: KeyToken) -> u16 {
         KeyToken::VolumeUp => KEY_VOLUMEUP,
         KeyToken::VolumeDown => KEY_VOLUMEDOWN,
         KeyToken::Mute => KEY_MUTE,
+        KeyToken::LeftShift => KEY_LEFTSHIFT,
+        KeyToken::LeftCtrl => KEY_LEFTCTRL,
+        KeyToken::LeftAlt => KEY_LEFTALT,
     }
 }
 
@@ -428,5 +431,13 @@ mod tests {
             KeyId::WheelClick,
             KeyId::Mode,
         ]
+    }
+
+    #[test]
+    fn a_bare_modifier_key_sends_the_same_code_the_modifier_does() {
+        use crate::types::Modifier;
+        assert_eq!(token_to_evdev(KeyToken::LeftShift), modifier_to_evdev(Modifier::Shift));
+        assert_eq!(token_to_evdev(KeyToken::LeftCtrl), modifier_to_evdev(Modifier::Ctrl));
+        assert_eq!(token_to_evdev(KeyToken::LeftAlt), modifier_to_evdev(Modifier::Alt));
     }
 }

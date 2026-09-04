@@ -21,13 +21,9 @@
     "kp15": { "type": "key", "key": "tab", "modifiers": [] },
     "kp16": { "type": "key", "key": "space", "modifiers": [] },
     "kp17": { "type": "key", "key": "y", "modifiers": [] },
-    "kp18": { "type": "key", "key": "v", "modifiers": [] },
+    "kp18": { "type": "key", "key": "7", "modifiers": [] },
     "kp19": { "type": "key", "key": "a", "modifiers": [] },
     "kp20": { "type": "key", "key": "s", "modifiers": [] }
   },
-  "lighting": {
-    "effect": "static",
-    "brightness": 80,
-    "color": [0, 180, 255]
-  }
+  "lighting": {"effect": "static", "brightness": 80, "color": [0, 180, 255]}
 }

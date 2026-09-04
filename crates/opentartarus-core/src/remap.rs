@@ -7,7 +7,8 @@ use crate::keymap::{
     KeyMap, ABS_HAT0X, ABS_HAT0Y, ABS_X, ABS_Y, EV_ABS, EV_KEY, EV_REL, REL_WHEEL,
 };
 use crate::types::{
-    Action, DeviceModel, Edge, KeyId, MacroKind, MacroStep, MouseTarget, Profile, ScrollDir,
+    Action, DeviceModel, Edge, KeyId, MacroKind, MacroStep, MouseTarget, Profile, ProfileSwitch,
+    ScrollDir,
 };
 use std::collections::BTreeMap;
 
@@ -66,6 +67,7 @@ pub struct RemapEngine {
     macro_busy: bool,
     macro_play: Option<MacroPlay>,
     hold: Option<(KeyId, u64, u32)>,
+    profile_switch: Option<ProfileSwitch>,
     hat_x: i32,
     hat_y: i32,
     hat_dir: Option<KeyId>,
@@ -90,6 +92,7 @@ impl RemapEngine {
             macro_busy: false,
             macro_play: None,
             hold: None,
+            profile_switch: None,
             hat_x: 0,
             hat_y: 0,
             hat_dir: None,
@@ -108,6 +111,12 @@ impl RemapEngine {
 
     pub fn has_timed_work(&self) -> bool {
         self.macro_play.is_some() || self.hold.is_some()
+    }
+
+    /// The profile change the last handled press asked for, if any. Taking
+    /// it clears it, so one press asks exactly once.
+    pub fn take_profile_switch(&mut self) -> Option<ProfileSwitch> {
+        self.profile_switch.take()
     }
 
     pub fn pending_deadline_ms(&self) -> Option<u64> {
@@ -304,6 +313,10 @@ impl RemapEngine {
                 play_action_edge(inner, KEY_DOWN, sink);
                 self.hold = Some((key_id, clock.now_ms(), *rate_ms));
             }
+            Action::SwitchProfile { profile } => {
+                self.profile_switch = Some(ProfileSwitch::To(profile.clone()));
+            }
+            Action::NextProfile => self.profile_switch = Some(ProfileSwitch::Next),
             other => play_action_edge(other, KEY_DOWN, sink),
         }
     }
@@ -397,7 +410,10 @@ fn play_action_edge(action: &Action, value: i32, sink: &mut impl EventSink) {
     match action {
         Action::Key { key, modifiers } => emit_combo(sink, *key, modifiers, value),
         Action::Mouse { target } => emit_mouse(sink, target, value),
-        Action::Macro { .. } | Action::HoldRepeat { .. } => {}
+        Action::Macro { .. }
+        | Action::HoldRepeat { .. }
+        | Action::SwitchProfile { .. }
+        | Action::NextProfile => {}
     }
 }
 
@@ -496,6 +512,7 @@ mod tests {
                 color: None,
             },
             unknown_key_ids: false,
+            setup_note: None,
         };
         p.bindings.insert(KeyId::Kp01, kp01);
         let mut e = RemapEngine::new(DeviceModel::V2);
@@ -710,6 +727,7 @@ mod tests {
                 color: None,
             },
             unknown_key_ids: false,
+            setup_note: None,
         };
         p.bindings.insert(id, action);
         let mut e = RemapEngine::new(model);
@@ -923,6 +941,7 @@ mod tests {
                 color: None,
             },
             unknown_key_ids: false,
+            setup_note: None,
         };
         p.bindings.insert(
             KeyId::Kp01,
@@ -969,5 +988,40 @@ mod tests {
             .filter(|x| x.code == one && x.value == 1)
             .count();
         assert_eq!(ones, 1, "second macro press is ignored while busy");
+    }
+
+    #[test]
+    fn a_switch_key_asks_for_the_profile_and_sends_nothing() {
+        let mut e = engine_with(Action::SwitchProfile {
+            profile: "dota-2".into(),
+        });
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        e.handle(press_kp01(), &mut s, &mut c);
+        assert_eq!(
+            e.take_profile_switch(),
+            Some(ProfileSwitch::To("dota-2".into()))
+        );
+        assert_eq!(e.take_profile_switch(), None, "one press asks once");
+        e.handle(
+            RawEvent {
+                value: 0,
+                ..press_kp01()
+            },
+            &mut s,
+            &mut c,
+        );
+        assert!(s.0.is_empty(), "no keystroke may leak to the desktop");
+        assert_eq!(e.take_profile_switch(), None, "the release asks nothing");
+    }
+
+    #[test]
+    fn a_next_key_asks_for_the_next_profile() {
+        let mut e = engine_with(Action::NextProfile);
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        e.handle(press_kp01(), &mut s, &mut c);
+        assert_eq!(e.take_profile_switch(), Some(ProfileSwitch::Next));
+        assert!(s.0.is_empty());
     }
 }

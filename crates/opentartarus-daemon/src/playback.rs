@@ -1,5 +1,6 @@
-use crate::handler::DaemonState;
+use crate::handler::{switch_profile, DaemonState};
 use crate::uinput_sink::UinputSink;
+use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::Method;
 use opentartarus_core::lighting::LightingClient;
 use opentartarus_core::remap::{Clock, Emitted, EventSink, RawEvent, RemapEngine};
@@ -72,13 +73,17 @@ impl EventSink for BriefLockSink<'_> {
     }
 }
 
+/// Plays one physical event through the engine. When the key was a
+/// profile-switch key, carries the switch out and returns the id now live
+/// (or the error the switch hit); `None` when the key asked for no switch.
 pub fn remap_physical_event<L, C>(
     state: &Mutex<DaemonState<L>>,
     sink: &Mutex<Option<UinputSink>>,
     epoch: &EngineEpoch,
     ev: RawEvent,
     clock: &mut C,
-) where
+) -> Option<Result<String, ErrorCode>>
+where
     L: LightingClient,
     C: Clock,
 {
@@ -89,8 +94,17 @@ pub fn remap_physical_event<L, C>(
     };
     let mut emit = BriefLockSink::new(sink);
     engine.handle(ev, &mut emit, clock);
+    let switch = engine.take_profile_switch();
     let mut st = state.lock().expect("daemon state");
     restore_engine_if_current(&mut st, engine, epoch_at_take, epoch);
+    let switch = switch?;
+    // A successful switch replaced the engine's table, so any taker still in
+    // flight must not restore its stale copy over it.
+    let outcome = switch_profile(&mut st, &switch);
+    if outcome.is_ok() {
+        epoch.bump();
+    }
+    Some(outcome)
 }
 
 pub fn tick_engine<L, C>(
@@ -436,5 +450,68 @@ mod tests {
             "apply that wins the mutex before take must not be discarded on restore"
         );
         assert_eq!(epoch.load(), 1);
+    }
+
+    fn bind_kp01_switch(st: &mut DaemonState<RecordingLighting>, target: &str) {
+        handle_request(st, Method::ApplyProfile, json!({ "id": "default" }), 0).unwrap();
+        handle_request(
+            st,
+            Method::SetBinding,
+            json!({
+                "profile_id": "default",
+                "key_id": "kp01",
+                "action": { "type": "switch_profile", "profile": target }
+            }),
+            0,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn a_switch_key_makes_the_profile_live_and_bumps_the_epoch() {
+        let mut st = state();
+        bind_kp01_switch(&mut st, "league-of-legends");
+        let state = Arc::new(Mutex::new(st));
+        let sink = Arc::new(Mutex::new(None));
+        let epoch = EngineEpoch::new();
+        let applied = remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut NoSleep);
+        assert_eq!(applied, Some(Ok("league-of-legends".to_owned())));
+        let mut st = state.lock().expect("daemon state");
+        assert_eq!(st.active_id.as_deref(), Some("league-of-legends"));
+        assert_eq!(epoch.load(), 1, "the engine changed, so in-flight takers must not restore");
+        let codes = probe_codes(&mut st.engine, KP02_NATIVE_CODE);
+        assert_eq!(
+            codes,
+            vec![opentartarus_core::keymap::token_to_evdev(
+                opentartarus_core::types::KeyToken::W
+            )],
+            "the pad now plays the profile it switched to"
+        );
+    }
+
+    #[test]
+    fn a_switch_to_a_missing_profile_reports_it_and_keeps_the_live_engine() {
+        let mut st = state();
+        bind_kp01_switch(&mut st, "nope");
+        let state = Arc::new(Mutex::new(st));
+        let sink = Arc::new(Mutex::new(None));
+        let epoch = EngineEpoch::new();
+        let applied = remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut NoSleep);
+        assert_eq!(applied, Some(Err(ErrorCode::NotFound)));
+        let st = state.lock().expect("daemon state");
+        assert_eq!(st.active_id.as_deref(), Some("default"));
+        assert_eq!(epoch.load(), 0, "nothing replaced the engine");
+    }
+
+    #[test]
+    fn an_ordinary_key_asks_for_no_switch() {
+        let mut st = state();
+        handle_request(&mut st, Method::ApplyProfile, json!({ "id": "default" }), 0).unwrap();
+        let state = Arc::new(Mutex::new(st));
+        let sink = Arc::new(Mutex::new(None));
+        let epoch = EngineEpoch::new();
+        let applied = remap_physical_event(&state, &sink, &epoch, kp01_down(), &mut NoSleep);
+        assert_eq!(applied, None);
+        assert_eq!(epoch.load(), 0);
     }
 }

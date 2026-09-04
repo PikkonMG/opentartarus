@@ -274,6 +274,12 @@ pub enum KeyToken {
     VolumeUp,
     VolumeDown,
     Mute,
+    /// The modifier keys as keys in their own right: held for sprint,
+    /// crouch or walk in most games. Serialised as `leftshift`, `leftctrl`
+    /// and `leftalt`.
+    LeftShift,
+    LeftCtrl,
+    LeftAlt,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -365,6 +371,22 @@ pub enum Action {
         #[serde(default = "default_hold_repeat_rate_ms")]
         rate_ms: u32,
     },
+    /// Makes the named profile live. The engine only records the request;
+    /// the daemon carries it out. See `RemapEngine::take_profile_switch`.
+    SwitchProfile {
+        profile: String,
+    },
+    /// Steps to the next profile in list order, wrapping at the end.
+    NextProfile,
+}
+
+/// A profile change a key asked for. The remap engine records it and the
+/// daemon carries it out, because only the daemon can load and activate a
+/// profile.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProfileSwitch {
+    To(String),
+    Next,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -423,6 +445,8 @@ struct ProfileDe {
     device_models: Vec<DeviceModel>,
     bindings: BTreeMap<String, Action>,
     lighting: Lighting,
+    #[serde(default)]
+    setup_note: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -434,6 +458,12 @@ pub struct Profile {
     pub device_models: Vec<DeviceModel>,
     pub bindings: BTreeMap<KeyId, Action>,
     pub lighting: Lighting,
+    /// A one-line step the player must take in the game before this layout
+    /// works, such as adding a second key for an action that defaults to a
+    /// bare Shift or Ctrl, which the pad cannot send. Only some profiles
+    /// need one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub setup_note: Option<String>,
     #[serde(skip)]
     pub(crate) unknown_key_ids: bool,
 }
@@ -459,6 +489,7 @@ impl From<ProfileDe> for Profile {
             device_models: raw.device_models,
             bindings,
             lighting: raw.lighting,
+            setup_note: raw.setup_note,
             unknown_key_ids,
         }
     }

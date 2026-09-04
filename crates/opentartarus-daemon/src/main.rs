@@ -699,7 +699,11 @@ fn handle_physical_event<L: LightingClient>(
         }
     }
     let mut clock = SystemClock;
-    remap_physical_event(state, sink, epoch, ev, &mut clock);
+    match remap_physical_event(state, sink, epoch, ev, &mut clock) {
+        Some(Ok(id)) => emit_event(events, EventMethod::ProfileApplied, json!({ "id": id })),
+        Some(Err(err)) => log::write(&err.log_line(None)),
+        None => {}
+    }
 }
 
 fn record_params_from_event(ev: &RawEvent) -> Option<serde_json::Value> {

@@ -106,6 +106,9 @@ pub enum Message {
     },
     HoldRepeat(bool),
     MousePick(MouseTarget),
+    /// Binds the selected key to one key that the combo box cannot type,
+    /// such as a bare Shift.
+    KeyPick(KeyToken),
     AddMacroStep,
     DeleteMacroStep(usize),
     MacroDelay(usize, String),
@@ -133,6 +136,10 @@ pub enum Message {
     SubmitNewProfile,
     CancelNewProfile,
     DeleteProfile(String),
+    /// Binds the selected key to step to the next profile.
+    NextProfilePick,
+    /// Binds the selected key to jump to one profile.
+    SwitchProfilePick(ProfileChoice),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -191,6 +198,9 @@ pub struct App {
     pub grab_conflict: Option<String>,
     pub bindings: BTreeMap<KeyId, Action>,
     pub lighting: Lighting,
+    /// The active profile's in-game setup step, shown while no key is
+    /// selected. Most profiles have none.
+    pub setup_note: Option<String>,
     pub selected_key: Option<KeyId>,
     pub combo_text: String,
     pub combo_focused: bool,
@@ -229,6 +239,7 @@ impl Default for App {
                 brightness: theme::DEFAULT_BRIGHTNESS,
                 color: None,
             },
+            setup_note: None,
             selected_key: None,
             combo_text: String::new(),
             combo_focused: false,
@@ -410,6 +421,18 @@ impl App {
                     self.recording = false;
                 } else {
                     self.apply_action(Action::Mouse { target });
+                }
+                Task::none()
+            }
+            Message::KeyPick(key) => {
+                if self.recording {
+                    self.send(Method::SubmitRecord, submit_record_key_params(key, &[]));
+                    self.recording = false;
+                } else {
+                    self.apply_action(Action::Key {
+                        key,
+                        modifiers: vec![],
+                    });
                 }
                 Task::none()
             }
@@ -605,6 +628,16 @@ impl App {
                 self.send(Method::DeleteProfile, json!({ "id": id }));
                 Task::none()
             }
+            Message::NextProfilePick => {
+                self.apply_action(Action::NextProfile);
+                Task::none()
+            }
+            Message::SwitchProfilePick(choice) => {
+                self.apply_action(Action::SwitchProfile {
+                    profile: choice.id,
+                });
+                Task::none()
+            }
         }
     }
 
@@ -702,6 +735,28 @@ impl App {
     pub fn selected_action(&self) -> Option<Action> {
         self.selected_key
             .and_then(|id| self.bindings.get(&id).cloned())
+    }
+
+    /// Every profile the switch-profile picker can jump to, in list order.
+    pub fn profile_choices(&self) -> Vec<ProfileChoice> {
+        self.profiles
+            .iter()
+            .map(|row| ProfileChoice {
+                id: row.id.clone(),
+                name: row.name.clone(),
+            })
+            .collect()
+    }
+
+    /// The picker's current value: the profile the selected key jumps to,
+    /// when it is a switch key and that profile still exists.
+    pub fn switch_target_choice(&self) -> Option<ProfileChoice> {
+        let Some(Action::SwitchProfile { profile }) = self.selected_action() else {
+            return None;
+        };
+        self.profile_choices()
+            .into_iter()
+            .find(|choice| choice.id == profile)
     }
 
     pub fn profile_id(&self) -> Option<String> {
@@ -1000,6 +1055,7 @@ impl App {
         if let Some(profile) = read_profile(id) {
             self.bindings = profile.bindings;
             self.lighting = profile.lighting;
+            self.setup_note = profile.setup_note;
         }
     }
 
@@ -1086,6 +1142,20 @@ pub const LIGHTING_EFFECTS: [EffectChoice; 7] = [
     EffectChoice(LightingEffect::Starlight),
     EffectChoice(LightingEffect::None),
 ];
+
+/// A profile as the switch-profile picker offers it: shown by name, keyed by
+/// id. `pick_list` needs `Display` for the row and equality for the selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileChoice {
+    pub id: String,
+    pub name: String,
+}
+
+impl std::fmt::Display for ProfileChoice {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name)
+    }
+}
 
 fn read_profile(id: &str) -> Option<Profile> {
     let paths = Paths::from_env();
@@ -1727,5 +1797,71 @@ mod tests {
         });
         assert_eq!(app.profiles.len(), 1);
         assert_eq!(app.profiles[0].color, None);
+    }
+
+    #[test]
+    fn picking_a_profile_binds_a_jump_and_next_binds_a_cycle() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = app_with_profiles();
+        app.ipc_tx = Some(tx);
+        app.selected_key = Some(KeyId::Mode);
+        assert_eq!(app.switch_target_choice(), None, "nothing bound yet");
+
+        let choice = ProfileChoice {
+            id: "default".into(),
+            name: "Default".into(),
+        };
+        let _ = app.update(Message::SwitchProfilePick(choice.clone()));
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::SetBinding);
+        assert_eq!(outgoing.params["key_id"], "mode");
+        assert_eq!(
+            outgoing.params["action"],
+            json!({ "type": "switch_profile", "profile": "default" })
+        );
+        assert_eq!(
+            app.switch_target_choice(),
+            Some(choice),
+            "the picker shows what was picked"
+        );
+
+        let _ = app.update(Message::NextProfilePick);
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.params["action"], json!({ "type": "next_profile" }));
+        assert_eq!(app.bindings.get(&KeyId::Mode), Some(&Action::NextProfile));
+        assert_eq!(app.switch_target_choice(), None, "a cycle names no one profile");
+    }
+
+    #[test]
+    fn the_picker_lists_every_profile_by_name_in_list_order() {
+        let app = app_with_profiles();
+        let names: Vec<String> = app
+            .profile_choices()
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(names, vec!["Default", "League of Legends"]);
+    }
+
+    #[test]
+    fn a_held_key_chip_binds_the_bare_modifier_or_answers_a_recording() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = app_with_profiles();
+        app.ipc_tx = Some(tx);
+        app.selected_key = Some(KeyId::Kp16);
+        let _ = app.update(Message::KeyPick(KeyToken::LeftShift));
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::SetBinding);
+        assert_eq!(
+            outgoing.params["action"],
+            json!({ "type": "key", "key": "leftshift", "modifiers": [] })
+        );
+
+        app.recording = true;
+        let _ = app.update(Message::KeyPick(KeyToken::LeftCtrl));
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::SubmitRecord);
+        assert_eq!(outgoing.params["key"], "leftctrl");
+        assert!(!app.recording, "the chip ends the recording");
     }
 }

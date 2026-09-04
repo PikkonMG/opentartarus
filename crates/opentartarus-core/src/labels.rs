@@ -32,6 +32,11 @@ const POSITION_ANALOG: &str = "analog stick";
 const POSITION_WHEEL: &str = "wheel";
 const POSITION_WHEEL_COLUMN: &str = "wheel column";
 
+/// Keycap labels for the profile-switch actions. Short, because a cap is
+/// narrow; the inspector spells out which profile.
+const SWITCH_PROFILE_LABEL: &str = "Profile";
+const NEXT_PROFILE_LABEL: &str = "Next";
+
 /// The name shown as the inspector heading, for example `Key 07` or
 /// `Thumb north`.
 pub fn key_display_name(id: KeyId) -> String {
@@ -105,6 +110,8 @@ pub fn bind_label(action: Option<&Action>) -> String {
         Some(Action::Key { key, modifiers }) => key_combo_label(*key, modifiers),
         Some(Action::Macro { .. }) => String::from("Macro"),
         Some(Action::Mouse { target }) => mouse_label(target),
+        Some(Action::SwitchProfile { .. }) => String::from(SWITCH_PROFILE_LABEL),
+        Some(Action::NextProfile) => String::from(NEXT_PROFILE_LABEL),
         Some(Action::HoldRepeat { inner, .. }) => bind_label(Some(inner)),
     }
 }
@@ -181,6 +188,10 @@ fn token_label(key: KeyToken) -> String {
         KeyToken::Num7 => String::from("7"),
         KeyToken::Num8 => String::from("8"),
         KeyToken::Num9 => String::from("9"),
+        KeyToken::CapsLock => String::from("Caps"),
+        KeyToken::LeftShift => String::from("Shift"),
+        KeyToken::LeftCtrl => String::from("Ctrl"),
+        KeyToken::LeftAlt => String::from("Alt"),
         other => format!("{other:?}"),
     }
 }
@@ -265,6 +276,35 @@ mod tests {
             })),
             "Wheel+"
         );
+    }
+
+    #[test]
+    fn bare_modifier_keys_read_like_the_modifiers_do() {
+        for (token, label) in [
+            (KeyToken::CapsLock, "Caps"),
+            (KeyToken::LeftShift, "Shift"),
+            (KeyToken::LeftCtrl, "Ctrl"),
+            (KeyToken::LeftAlt, "Alt"),
+        ] {
+            assert_eq!(
+                bind_label(Some(&Action::Key {
+                    key: token,
+                    modifiers: vec![]
+                })),
+                label
+            );
+        }
+    }
+
+    #[test]
+    fn switch_labels_are_short_enough_for_a_keycap() {
+        assert_eq!(
+            bind_label(Some(&Action::SwitchProfile {
+                profile: "league-of-legends".into()
+            })),
+            "Profile"
+        );
+        assert_eq!(bind_label(Some(&Action::NextProfile)), "Next");
     }
 
     #[test]

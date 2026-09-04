@@ -4,6 +4,7 @@ use opentartarus_core::constants::{
 };
 use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::Method;
+use opentartarus_core::labels::profile_row_order;
 use opentartarus_core::lighting::LightingClient;
 use opentartarus_core::pack::{is_shipped, shipped_json, shipped_profile, SHIPPED_IDS};
 use opentartarus_core::paths::Paths;
@@ -11,7 +12,7 @@ use opentartarus_core::record::{RecordOutcome, Recorder};
 use opentartarus_core::remap::RemapEngine;
 use opentartarus_core::validate::profile_id_for_name;
 use opentartarus_core::store::{copy_on_apply, delete_user_profile, list_user_profile_ids, read_user_profile, revert_to_shipped, write_active_id, write_profile};
-use opentartarus_core::types::{Action, DeviceModel, GameId, KeyId, KeyToken, Lighting, Modifier, MouseButton, MouseTarget, Profile, ScrollDir};
+use opentartarus_core::types::{Action, DeviceModel, GameId, KeyId, KeyToken, Lighting, Modifier, MouseButton, MouseTarget, Profile, ProfileSwitch, ScrollDir};
 use serde_json::{json, Value};
 
 const PROFILE_SOURCE_USER: &str = "user";
@@ -389,9 +390,7 @@ fn create_profile<L: LightingClient>(
         .or_else(|| state.active_id.clone())
         .unwrap_or_else(|| CREATE_FALLBACK_SOURCE.to_owned());
 
-    let mut taken: Vec<String> = SHIPPED_IDS.iter().map(|id| (*id).to_owned()).collect();
-    taken.extend(list_user_profile_ids(&state.paths)?);
-    let id = profile_id_for_name(&name, &taken);
+    let id = profile_id_for_name(&name, &profile_ids_in_order(state)?);
 
     let mut profile = load_user_copy(state, &source_id)?;
     profile.id = id.clone();
@@ -422,6 +421,51 @@ fn delete_profile<L: LightingClient>(
         activate(state, CREATE_FALLBACK_SOURCE)?;
     }
     Ok(json!({ "id": id, "active_id": state.active_id }))
+}
+
+/// Every profile id the daemon lists, in list order: shipped first in pack
+/// order, then custom. What `NextProfile` steps through, and what a new
+/// profile's id must not collide with.
+fn profile_ids_in_order<L: LightingClient>(
+    state: &DaemonState<L>,
+) -> Result<Vec<String>, ErrorCode> {
+    let mut ids: Vec<String> = SHIPPED_IDS.iter().map(|id| (*id).to_owned()).collect();
+    ids.extend(
+        list_user_profile_ids(&state.paths)?
+            .into_iter()
+            .filter(|id| !is_shipped(id)),
+    );
+    Ok(profile_row_order(&ids))
+}
+
+/// The profile after the active one in list order, wrapping at the end.
+/// With nothing applied, the first profile.
+fn next_profile_id<L: LightingClient>(state: &DaemonState<L>) -> Result<String, ErrorCode> {
+    let ids = profile_ids_in_order(state)?;
+    if ids.is_empty() {
+        return Err(ErrorCode::NotFound);
+    }
+    let next = state
+        .active_id
+        .as_deref()
+        .and_then(|active| ids.iter().position(|id| id == active))
+        .map_or(0, |index| (index + 1) % ids.len());
+    ids.get(next).cloned().ok_or(ErrorCode::NotFound)
+}
+
+/// Carries out a profile change a key on the pad asked for, and reports
+/// which profile is live now. Public because the device loop calls it: the
+/// remap engine only records the request.
+pub fn switch_profile<L: LightingClient>(
+    state: &mut DaemonState<L>,
+    switch: &ProfileSwitch,
+) -> Result<String, ErrorCode> {
+    let id = match switch {
+        ProfileSwitch::To(id) => id.clone(),
+        ProfileSwitch::Next => next_profile_id(state)?,
+    };
+    activate(state, &id)?;
+    Ok(id)
 }
 
 #[cfg(test)]
@@ -576,7 +620,11 @@ mod tests {
         assert_eq!(st.active_id, None);
         let id = create(&mut st, "Blank Slate");
         let mine = read_user_profile(&st.paths, &id).unwrap();
-        assert!(mine.bindings.is_empty(), "default has no bindings, so neither does the copy");
+        let default = shipped_profile("default").unwrap();
+        assert_eq!(
+            mine.bindings, default.bindings,
+            "starts as a copy of the shipped default"
+        );
         assert_eq!(mine.game, GameId::Custom);
     }
 
@@ -649,7 +697,14 @@ mod tests {
         )
         .unwrap();
         let mine = read_user_profile(&st.paths, &id).unwrap();
-        assert_eq!(mine.bindings.len(), 1);
+        assert_eq!(
+            mine.bindings.get(&KeyId::Kp01),
+            Some(&Action::Key {
+                key: KeyToken::Q,
+                modifiers: vec![]
+            }),
+            "the edit lands on the custom copy"
+        );
     }
 
     #[test]
@@ -853,5 +908,58 @@ mod tests {
             profile.bindings.get(&KeyId::Kp01),
             Some(Action::Key { key: KeyToken::C, modifiers }) if modifiers == &[Modifier::Ctrl]
         ));
+    }
+
+    #[test]
+    fn next_profile_steps_in_list_order_and_wraps() {
+        let mut st = state();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": "default"}), 0).unwrap();
+        let second = SHIPPED_IDS[1];
+        assert_eq!(switch_profile(&mut st, &ProfileSwitch::Next).unwrap(), second);
+        assert_eq!(st.active_id.as_deref(), Some(second));
+
+        let last = SHIPPED_IDS[SHIPPED_IDS.len() - 1];
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": last}), 0).unwrap();
+        switch_profile(&mut st, &ProfileSwitch::Next).unwrap();
+        assert_eq!(st.active_id.as_deref(), Some("default"), "wraps to the first");
+    }
+
+    #[test]
+    fn next_profile_reaches_custom_profiles_after_the_shipped_ones() {
+        let mut st = state();
+        let last = SHIPPED_IDS[SHIPPED_IDS.len() - 1];
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": last}), 0).unwrap();
+        handle_request(&mut st, Method::CreateProfile, json!({"name": "Mine"}), 0).unwrap();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": last}), 0).unwrap();
+        switch_profile(&mut st, &ProfileSwitch::Next).unwrap();
+        assert_eq!(st.active_id.as_deref(), Some("mine"));
+        switch_profile(&mut st, &ProfileSwitch::Next).unwrap();
+        assert_eq!(st.active_id.as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn switch_to_a_named_profile_activates_it_and_an_unknown_one_is_refused() {
+        let mut st = state();
+        assert_eq!(
+            switch_profile(&mut st, &ProfileSwitch::To("dota-2".into())).unwrap(),
+            "dota-2"
+        );
+        assert_eq!(st.active_id.as_deref(), Some("dota-2"));
+        assert_eq!(
+            switch_profile(&mut st, &ProfileSwitch::To("nope".into())).unwrap_err(),
+            ErrorCode::NotFound
+        );
+        assert_eq!(
+            st.active_id.as_deref(),
+            Some("dota-2"),
+            "a failed switch changes nothing"
+        );
+    }
+
+    #[test]
+    fn with_nothing_applied_next_starts_at_the_first_profile() {
+        let mut st = state();
+        switch_profile(&mut st, &ProfileSwitch::Next).unwrap();
+        assert_eq!(st.active_id.as_deref(), Some(SHIPPED_IDS[0]));
     }
 }
