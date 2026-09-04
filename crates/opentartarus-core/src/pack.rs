@@ -42,6 +42,12 @@ pub fn shipped_json(id: &str) -> Option<&'static str> {
     }
 }
 
+/// Whether an id names a profile from the shipped pack. Shipped profiles can
+/// be reverted but never deleted; custom ones are the reverse.
+pub fn is_shipped(id: &str) -> bool {
+    SHIPPED_IDS.contains(&id)
+}
+
 pub fn shipped_profile(id: &str) -> Result<Profile, ErrorCode> {
     let raw = shipped_json(id).ok_or(ErrorCode::NotFound)?;
     let p: Profile = serde_json::from_str(raw).map_err(|_| ErrorCode::InvalidProfile)?;
@@ -98,6 +104,25 @@ mod tests {
         "elder-scrolls-online",
         "minecraft",
     ];
+
+    #[test]
+    fn is_shipped_knows_the_pack_and_nothing_else() {
+        for id in SHIPPED_IDS {
+            assert!(is_shipped(id), "{id} ships with the app");
+        }
+        assert!(!is_shipped("my-raid-layout"));
+        assert!(!is_shipped(""));
+        // Case matters: ids are lowercase slugs.
+        assert!(!is_shipped("Default"));
+    }
+
+    #[test]
+    fn a_custom_game_round_trips_through_json_as_custom() {
+        let json = serde_json::to_string(&GameId::Custom).unwrap();
+        assert_eq!(json, "\"custom\"");
+        let back: GameId = serde_json::from_str("\"custom\"").unwrap();
+        assert_eq!(back, GameId::Custom);
+    }
 
     #[test]
     fn shipped_ids_are_pack_order() {

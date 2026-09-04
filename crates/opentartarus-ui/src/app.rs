@@ -1,7 +1,7 @@
 use crate::client::{self, FixPermissionsOutcome, Outgoing};
 use crate::keys::{
-    capture_window_key, is_combo_id, query_focused_id, submit_record_key_params,
-    submit_record_mouse_params, KeyCapture,
+    capture_window_key, is_combo_id, is_new_profile_id, query_focused_id,
+    submit_record_key_params, submit_record_mouse_params, KeyCapture, NEW_PROFILE_INPUT_ID,
 };
 use crate::theme;
 use iced::advanced::widget::Id;
@@ -9,6 +9,7 @@ use iced::futures::channel::mpsc;
 use iced::keyboard::key::Named;
 use iced::keyboard::{self, Key};
 use iced::mouse;
+use iced::widget::text_input;
 use iced::window::{self, Mode};
 use iced::{event, Event, Subscription, Task, Theme};
 use opentartarus_core::constants::{
@@ -48,6 +49,9 @@ pub struct ProfileRow {
     pub name: String,
     pub is_active: bool,
     pub can_revert: bool,
+    /// True for a profile the user made. Shipped profiles can be reverted
+    /// but never deleted; custom ones are the reverse.
+    pub can_delete: bool,
     /// The profile's lighting colour, resolved once when the list refreshes so
     /// the sidebar never reads a file while drawing.
     pub color: Option<[u8; 3]>,
@@ -122,6 +126,13 @@ pub enum Message {
     MinimizeWindow,
     ToggleMaximize,
     CloseWindow,
+    /// Opens the inline name box at the bottom of the profile list.
+    StartNewProfile,
+    NewProfileNameChanged(String),
+    /// Creates the profile from the typed name, as a copy of the selected one.
+    SubmitNewProfile,
+    CancelNewProfile,
+    DeleteProfile(String),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -192,6 +203,9 @@ pub struct App {
     pub menu_open: bool,
     pub hovered_key: Option<KeyId>,
     pub lighting_saved: bool,
+    /// `Some` while the inline name box at the bottom of the profile list is
+    /// open; the text is what has been typed so far.
+    pub new_profile_name: Option<String>,
 }
 
 impl Default for App {
@@ -227,6 +241,7 @@ impl Default for App {
             menu_open: false,
             hovered_key: None,
             lighting_saved: false,
+            new_profile_name: None,
         }
     }
 }
@@ -356,6 +371,15 @@ impl App {
                 modifiers,
                 focused,
             } => {
+                // Escape in the new-profile box closes it. Any other key there
+                // is typing, not a binding, and must never reach the combo
+                // capture below.
+                if is_new_profile_id(focused.as_ref()) {
+                    if matches!(key, Key::Named(Named::Escape)) {
+                        self.new_profile_name = None;
+                    }
+                    return Task::none();
+                }
                 self.combo_focused = is_combo_id(focused.as_ref());
                 self.apply_captured_key(&key, modifiers, self.combo_focused);
                 Task::none()
@@ -541,6 +565,45 @@ impl App {
                 // the compositor's own close both take the same path: hide to
                 // tray on X11, exit the UI on Wayland.
                 self.with_window(|id| Task::done(Message::CloseRequested(id)))
+            }
+            Message::StartNewProfile => {
+                self.menu_open = false;
+                self.new_profile_name = Some(String::new());
+                text_input::focus(text_input::Id::new(NEW_PROFILE_INPUT_ID))
+            }
+            Message::NewProfileNameChanged(text) => {
+                if self.new_profile_name.is_some() {
+                    self.new_profile_name = Some(text);
+                }
+                Task::none()
+            }
+            Message::SubmitNewProfile => {
+                // A blank name is a no-op, not an error: the box stays open so
+                // the user can type one. The daemon copies from `copy_from`,
+                // which is whatever is selected, so the new profile starts as
+                // that layout under the new name.
+                let Some(name) = self.new_profile_name.as_deref() else {
+                    return Task::none();
+                };
+                let name = name.trim();
+                if name.is_empty() {
+                    return Task::none();
+                }
+                let mut params = json!({ "name": name });
+                if let Some(source) = self.profile_id() {
+                    params["copy_from"] = json!(source);
+                }
+                self.send(Method::CreateProfile, params);
+                self.new_profile_name = None;
+                Task::none()
+            }
+            Message::CancelNewProfile => {
+                self.new_profile_name = None;
+                Task::none()
+            }
+            Message::DeleteProfile(id) => {
+                self.send(Method::DeleteProfile, json!({ "id": id }));
+                Task::none()
             }
         }
     }
@@ -732,13 +795,27 @@ impl App {
             Some(Method::ListProfiles) => self.apply_profiles(&result),
             Some(Method::ApplyProfile)
             | Some(Method::RevertProfile)
+            | Some(Method::CreateProfile)
             | Some(Method::SetBinding)
             | Some(Method::ClearBinding)
             | Some(Method::SetLighting) => {
                 if let Some(id) = result.get("id").and_then(Value::as_str) {
                     self.active_profile_id = Some(id.to_string());
+                    self.selected_profile_id = Some(id.to_string());
                     self.load_profile(id);
                 }
+                self.send(Method::ListProfiles, json!({}));
+                self.send(Method::GetStatus, json!({}));
+            }
+            Some(Method::DeleteProfile) => {
+                // The daemon reports what is active now: unchanged if the
+                // deleted profile was not the live one, the fallback if it was.
+                if let Some(id) = result.get("active_id").and_then(Value::as_str) {
+                    self.active_profile_id = Some(id.to_string());
+                    self.selected_profile_id = Some(id.to_string());
+                    self.load_profile(id);
+                }
+                self.selected_key = None;
                 self.send(Method::ListProfiles, json!({}));
                 self.send(Method::GetStatus, json!({}));
             }
@@ -892,6 +969,10 @@ impl App {
             name: String,
             is_active: bool,
             can_revert: bool,
+            // Older daemons do not send this; a missing flag means "not
+            // deletable", which is the safe reading.
+            #[serde(default)]
+            can_delete: bool,
         }
         let rows: Vec<Row> = result
             .get("profiles")
@@ -910,6 +991,7 @@ impl App {
                 name: r.name,
                 is_active: r.is_active,
                 can_revert: r.can_revert,
+                can_delete: r.can_delete,
             })
             .collect();
     }
@@ -1120,6 +1202,7 @@ fn map_key_token(key: &Key) -> Option<KeyToken> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keys::new_profile_widget_id;
     use crate::client;
     use opentartarus_core::ipc::EventMethod;
     use std::path::Path;
@@ -1293,6 +1376,7 @@ mod tests {
                 name: "Default".into(),
                 is_active: false,
                 can_revert: false,
+                can_delete: false,
                 color: None,
             },
             ProfileRow {
@@ -1300,6 +1384,7 @@ mod tests {
                 name: "League of Legends".into(),
                 is_active: true,
                 can_revert: true,
+                can_delete: false,
                 color: None,
             },
         ];
@@ -1450,6 +1535,151 @@ mod tests {
             total,
             "two shipped profiles share a sidebar swatch colour"
         );
+    }
+
+    #[test]
+    fn starting_a_new_profile_opens_an_empty_name_box_and_closes_the_menu() {
+        let mut app = running_app();
+        app.menu_open = true;
+        assert_eq!(app.new_profile_name, None);
+        let _ = app.update(Message::StartNewProfile);
+        assert_eq!(app.new_profile_name.as_deref(), Some(""));
+        assert!(!app.menu_open);
+    }
+
+    #[test]
+    fn typing_only_lands_while_the_box_is_open() {
+        let mut app = running_app();
+        let _ = app.update(Message::NewProfileNameChanged("stray".into()));
+        assert_eq!(app.new_profile_name, None, "no box, nothing to type into");
+        let _ = app.update(Message::StartNewProfile);
+        let _ = app.update(Message::NewProfileNameChanged("My Raid".into()));
+        assert_eq!(app.new_profile_name.as_deref(), Some("My Raid"));
+    }
+
+    #[test]
+    fn submitting_sends_create_with_the_selected_profile_as_the_source() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = app_with_profiles();
+        app.ipc_tx = Some(tx);
+        let _ = app.update(Message::StartNewProfile);
+        let _ = app.update(Message::NewProfileNameChanged("  My Raid  ".into()));
+        let _ = app.update(Message::SubmitNewProfile);
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::CreateProfile);
+        assert_eq!(outgoing.params["name"], "My Raid", "name is trimmed");
+        assert_eq!(
+            outgoing.params["copy_from"], "league-of-legends",
+            "copies whatever is active"
+        );
+        assert_eq!(app.new_profile_name, None, "the box closes on submit");
+    }
+
+    #[test]
+    fn a_blank_name_does_not_send_and_leaves_the_box_open() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = app_with_profiles();
+        app.ipc_tx = Some(tx);
+        let _ = app.update(Message::StartNewProfile);
+        let _ = app.update(Message::NewProfileNameChanged("   ".into()));
+        let _ = app.update(Message::SubmitNewProfile);
+        assert!(rx.try_recv().is_err(), "nothing to create from a blank name");
+        assert!(app.new_profile_name.is_some(), "box stays open to be filled in");
+    }
+
+    #[test]
+    fn cancel_and_escape_both_close_the_box_without_sending() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        let _ = app.update(Message::StartNewProfile);
+        let _ = app.update(Message::CancelNewProfile);
+        assert_eq!(app.new_profile_name, None);
+
+        let _ = app.update(Message::StartNewProfile);
+        let _ = app.update(Message::ComboKeyResolved {
+            key: Key::Named(Named::Escape),
+            modifiers: keyboard::Modifiers::default(),
+            focused: Some(new_profile_widget_id()),
+        });
+        assert_eq!(app.new_profile_name, None);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn typing_in_the_name_box_never_becomes_a_key_binding() {
+        // The combo capture must ignore keys that land in the new-profile box.
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = app_with_profiles();
+        app.ipc_tx = Some(tx);
+        app.selected_key = Some(KeyId::Kp01);
+        let _ = app.update(Message::StartNewProfile);
+        let _ = app.update(Message::ComboKeyResolved {
+            key: Key::Character("q".into()),
+            modifiers: keyboard::Modifiers::default(),
+            focused: Some(new_profile_widget_id()),
+        });
+        assert!(rx.try_recv().is_err(), "a typed letter must not send SetBinding");
+        assert!(!app.bindings.contains_key(&KeyId::Kp01));
+    }
+
+    #[test]
+    fn delete_sends_the_id_and_the_reply_moves_selection_to_the_survivor() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = app_with_profiles();
+        app.ipc_tx = Some(tx);
+        app.selected_key = Some(KeyId::Kp05);
+        let _ = app.update(Message::DeleteProfile("my-raid-layout".into()));
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::DeleteProfile);
+        assert_eq!(outgoing.params["id"], "my-raid-layout");
+
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::DeleteProfile),
+            ok: true,
+            result: Some(json!({ "id": "my-raid-layout", "active_id": "default" })),
+            error: None,
+        });
+        assert_eq!(app.active_profile_id.as_deref(), Some("default"));
+        assert_eq!(app.selected_profile_id.as_deref(), Some("default"));
+        assert_eq!(app.selected_key, None, "the deleted profile's key is gone");
+    }
+
+    #[test]
+    fn a_create_reply_selects_the_new_profile() {
+        let mut app = app_with_profiles();
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::CreateProfile),
+            ok: true,
+            result: Some(json!({ "id": "my-raid-layout" })),
+            error: None,
+        });
+        assert_eq!(app.active_profile_id.as_deref(), Some("my-raid-layout"));
+        assert_eq!(app.selected_profile_id.as_deref(), Some("my-raid-layout"));
+    }
+
+    #[test]
+    fn rows_carry_the_delete_flag_and_default_it_off() {
+        let mut app = running_app();
+        let _ = app.update(Message::IpcResponse {
+            method: Some(Method::ListProfiles),
+            ok: true,
+            result: Some(json!({
+                "profiles": [
+                    { "id": "default", "name": "Default",
+                      "is_active": true, "can_revert": true, "can_delete": false },
+                    { "id": "mine", "name": "Mine",
+                      "is_active": false, "can_revert": false, "can_delete": true },
+                    { "id": "old-daemon", "name": "Old",
+                      "is_active": false, "can_revert": false }
+                ]
+            })),
+            error: None,
+        });
+        let by_id = |id: &str| app.profiles.iter().find(|r| r.id == id).unwrap();
+        assert!(!by_id("default").can_delete);
+        assert!(by_id("mine").can_delete);
+        assert!(!by_id("old-daemon").can_delete, "a missing flag reads as not deletable");
     }
 
     #[test]

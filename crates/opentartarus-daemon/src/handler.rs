@@ -5,17 +5,13 @@ use opentartarus_core::constants::{
 use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::Method;
 use opentartarus_core::lighting::LightingClient;
-use opentartarus_core::pack::{shipped_json, shipped_profile, SHIPPED_IDS};
+use opentartarus_core::pack::{is_shipped, shipped_json, shipped_profile, SHIPPED_IDS};
 use opentartarus_core::paths::Paths;
 use opentartarus_core::record::{RecordOutcome, Recorder};
 use opentartarus_core::remap::RemapEngine;
-use opentartarus_core::store::{
-    copy_on_apply, read_user_profile, revert_to_shipped, write_active_id, write_profile,
-};
-use opentartarus_core::types::{
-    Action, DeviceModel, KeyId, KeyToken, Lighting, Modifier, MouseButton, MouseTarget, Profile,
-    ScrollDir,
-};
+use opentartarus_core::validate::profile_id_for_name;
+use opentartarus_core::store::{copy_on_apply, delete_user_profile, list_user_profile_ids, read_user_profile, revert_to_shipped, write_active_id, write_profile};
+use opentartarus_core::types::{Action, DeviceModel, GameId, KeyId, KeyToken, Lighting, Modifier, MouseButton, MouseTarget, Profile, ScrollDir};
 use serde_json::{json, Value};
 
 const PROFILE_SOURCE_USER: &str = "user";
@@ -53,6 +49,8 @@ pub fn handle_request<L: LightingClient>(
         Method::SubmitRecord => submit_record(state, &params),
         Method::SetLighting => set_lighting(state, &params),
         Method::RevertProfile => revert_profile(state, &params),
+        Method::CreateProfile => create_profile(state, &params),
+        Method::DeleteProfile => delete_profile(state, &params),
         Method::ShowWindow => Ok(json!({})),
         Method::QuitDaemon => Ok(json!({ "stopping": true })),
     }
@@ -117,6 +115,9 @@ fn user_profile_exists(paths: &Paths, id: &str) -> bool {
     paths.profiles_dir.join(format!("{id}.json")).exists()
 }
 
+/// Shipped profiles first, in pack order, then every custom profile found in
+/// the user's directory. A shipped profile can be reverted but not deleted; a
+/// custom one is the reverse.
 fn list_profiles<L: LightingClient>(state: &DaemonState<L>) -> Result<Value, ErrorCode> {
     let mut profiles = Vec::with_capacity(SHIPPED_IDS.len());
     for id in SHIPPED_IDS {
@@ -126,16 +127,33 @@ fn list_profiles<L: LightingClient>(state: &DaemonState<L>) -> Result<Value, Err
         } else {
             shipped_profile(id)?
         };
-        profiles.push(json!({
-            "id": profile.id,
-            "name": profile.name,
-            "game": profile.game,
-            "source": if user_exists { PROFILE_SOURCE_USER } else { PROFILE_SOURCE_SHIPPED },
-            "is_active": state.active_id.as_deref() == Some(id),
-            "can_revert": shipped_json(id).is_some(),
-        }));
+        profiles.push(profile_row(
+            state,
+            &profile,
+            if user_exists { PROFILE_SOURCE_USER } else { PROFILE_SOURCE_SHIPPED },
+        ));
+    }
+    for id in list_user_profile_ids(&state.paths)? {
+        if is_shipped(&id) {
+            continue;
+        }
+        let profile = read_user_profile(&state.paths, &id)?;
+        profiles.push(profile_row(state, &profile, PROFILE_SOURCE_USER));
     }
     Ok(json!({ "profiles": profiles }))
+}
+
+fn profile_row<L: LightingClient>(state: &DaemonState<L>, profile: &Profile, source: &str) -> Value {
+    let shipped = is_shipped(&profile.id);
+    json!({
+        "id": profile.id,
+        "name": profile.name,
+        "game": profile.game,
+        "source": source,
+        "is_active": state.active_id.as_deref() == Some(profile.id.as_str()),
+        "can_revert": shipped,
+        "can_delete": !shipped,
+    })
 }
 
 fn require_string(params: &Value, key: &str) -> Result<String, ErrorCode> {
@@ -184,12 +202,18 @@ fn apply_if_active<L: LightingClient>(
     Ok(())
 }
 
+/// The editable copy of a profile. A shipped id is copied into the user's
+/// directory on first use; a custom id lives there already, and only there,
+/// so a custom id with no file is not found.
 fn load_user_copy<L: LightingClient>(
     state: &DaemonState<L>,
     id: &str,
 ) -> Result<Profile, ErrorCode> {
-    let raw = shipped_json(id).ok_or(ErrorCode::NotFound)?;
-    copy_on_apply(&state.paths, raw, id)
+    match shipped_json(id) {
+        Some(raw) => copy_on_apply(&state.paths, raw, id),
+        None if user_profile_exists(&state.paths, id) => read_user_profile(&state.paths, id),
+        None => Err(ErrorCode::NotFound),
+    }
 }
 
 fn persist_profile<L: LightingClient>(
@@ -207,12 +231,21 @@ fn apply_profile<L: LightingClient>(
     params: &Value,
 ) -> Result<Value, ErrorCode> {
     let id = require_string(params, "id")?;
-    let raw = shipped_json(&id).ok_or(ErrorCode::NotFound)?;
-    let profile = copy_on_apply(&state.paths, raw, &id)?;
+    activate(state, &id)
+}
+
+/// Makes `id` the live profile: loads its editable copy, pushes it into the
+/// remap engine, records it as active, and applies its lighting. Shared by
+/// apply, create, and the fallback after deleting the active profile.
+fn activate<L: LightingClient>(
+    state: &mut DaemonState<L>,
+    id: &str,
+) -> Result<Value, ErrorCode> {
+    let profile = load_user_copy(state, id)?;
     profile.validate()?;
     state.engine.apply_profile(&profile);
-    write_active_id(&state.paths, &id)?;
-    state.active_id = Some(id.clone());
+    write_active_id(&state.paths, id)?;
+    state.active_id = Some(id.to_owned());
     apply_lighting_soft(state, &profile.lighting)?;
     Ok(json!({ "id": id }))
 }
@@ -337,6 +370,60 @@ fn revert_profile<L: LightingClient>(
     Ok(json!({ "id": id }))
 }
 
+/// The profile a new one is copied from when the request names none: the
+/// active profile, or the shipped default on a session with nothing applied.
+const CREATE_FALLBACK_SOURCE: &str = "default";
+
+/// Creates a custom profile as a copy of an existing one under a new name,
+/// then makes it active. Copying rather than starting blank is the real use:
+/// take a game's layout, change a few keys, keep it as your own.
+fn create_profile<L: LightingClient>(
+    state: &mut DaemonState<L>,
+    params: &Value,
+) -> Result<Value, ErrorCode> {
+    let name = require_string(params, "name")?;
+    let source_id = params
+        .get("copy_from")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| state.active_id.clone())
+        .unwrap_or_else(|| CREATE_FALLBACK_SOURCE.to_owned());
+
+    let mut taken: Vec<String> = SHIPPED_IDS.iter().map(|id| (*id).to_owned()).collect();
+    taken.extend(list_user_profile_ids(&state.paths)?);
+    let id = profile_id_for_name(&name, &taken);
+
+    let mut profile = load_user_copy(state, &source_id)?;
+    profile.id = id.clone();
+    profile.name = name.trim().to_owned();
+    profile.game = GameId::Custom;
+    profile.validate()?;
+    write_profile(&state.paths, &profile)?;
+    activate(state, &id)
+}
+
+/// Deletes a custom profile. Shipped profiles are refused: they can be
+/// reverted, never removed. Deleting the active profile falls back to the
+/// shipped default so the pad is never left with nothing applied.
+fn delete_profile<L: LightingClient>(
+    state: &mut DaemonState<L>,
+    params: &Value,
+) -> Result<Value, ErrorCode> {
+    let id = require_string(params, "id")?;
+    if is_shipped(&id) {
+        return Err(ErrorCode::InvalidProfile);
+    }
+    if !user_profile_exists(&state.paths, &id) {
+        return Err(ErrorCode::NotFound);
+    }
+    delete_user_profile(&state.paths, &id)?;
+    let was_active = state.active_id.as_deref() == Some(id.as_str());
+    if was_active {
+        activate(state, CREATE_FALLBACK_SOURCE)?;
+    }
+    Ok(json!({ "id": id, "active_id": state.active_id }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,6 +536,154 @@ mod tests {
         assert_eq!(gone["device"]["model"], serde_json::Value::Null);
         assert_eq!(gone["device"]["vid"], serde_json::Value::Null);
         assert_eq!(gone["device"]["pid"], serde_json::Value::Null);
+    }
+
+    fn create(st: &mut DaemonState<RecordingLighting>, name: &str) -> String {
+        let v = handle_request(st, Method::CreateProfile, json!({ "name": name }), 0).unwrap();
+        v["id"].as_str().unwrap().to_owned()
+    }
+
+    fn row_ids(st: &mut DaemonState<RecordingLighting>) -> Vec<String> {
+        let v = handle_request(st, Method::ListProfiles, json!({}), 0).unwrap();
+        v["profiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    #[test]
+    fn create_copies_the_active_profile_under_a_new_name_and_activates_it() {
+        let mut st = state();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": "league-of-legends"}), 0)
+            .unwrap();
+        let id = create(&mut st, "My Raid Layout");
+        assert_eq!(id, "my-raid-layout");
+        assert_eq!(st.active_id.as_deref(), Some("my-raid-layout"));
+
+        let mine = read_user_profile(&st.paths, &id).unwrap();
+        let league = shipped_profile("league-of-legends").unwrap();
+        assert_eq!(mine.name, "My Raid Layout");
+        assert_eq!(mine.game, GameId::Custom);
+        assert_eq!(mine.bindings, league.bindings, "starts as a copy of the source");
+        assert_eq!(mine.lighting, league.lighting);
+    }
+
+    #[test]
+    fn create_with_nothing_applied_copies_the_shipped_default() {
+        let mut st = state();
+        assert_eq!(st.active_id, None);
+        let id = create(&mut st, "Blank Slate");
+        let mine = read_user_profile(&st.paths, &id).unwrap();
+        assert!(mine.bindings.is_empty(), "default has no bindings, so neither does the copy");
+        assert_eq!(mine.game, GameId::Custom);
+    }
+
+    #[test]
+    fn create_honours_an_explicit_source() {
+        let mut st = state();
+        let v = handle_request(
+            &mut st,
+            Method::CreateProfile,
+            json!({ "name": "Dota Tweaks", "copy_from": "dota-2" }),
+            0,
+        )
+        .unwrap();
+        let mine = read_user_profile(&st.paths, v["id"].as_str().unwrap()).unwrap();
+        assert_eq!(mine.bindings, shipped_profile("dota-2").unwrap().bindings);
+    }
+
+    #[test]
+    fn create_never_collides_with_a_shipped_id_or_an_earlier_custom_one() {
+        let mut st = state();
+        // "Default" would slug to "default", which the pack owns.
+        assert_eq!(create(&mut st, "Default"), "default-2");
+        assert_eq!(create(&mut st, "Default"), "default-3");
+        assert_eq!(create(&mut st, "Fresh"), "fresh");
+        assert_eq!(create(&mut st, "Fresh"), "fresh-2");
+    }
+
+    #[test]
+    fn create_rejects_a_blank_name() {
+        let mut st = state();
+        let err = handle_request(&mut st, Method::CreateProfile, json!({ "name": "   " }), 0)
+            .unwrap_err();
+        assert_eq!(err, ErrorCode::InvalidProfile);
+        let err = handle_request(&mut st, Method::CreateProfile, json!({}), 0).unwrap_err();
+        assert_eq!(err, ErrorCode::InvalidProfile);
+    }
+
+    #[test]
+    fn list_shows_custom_profiles_after_the_pack_with_the_right_flags() {
+        let mut st = state();
+        let id = create(&mut st, "Mine");
+        let v = handle_request(&mut st, Method::ListProfiles, json!({}), 0).unwrap();
+        let rows = v["profiles"].as_array().unwrap();
+        assert_eq!(rows.len(), SHIPPED_IDS.len() + 1);
+        let last = &rows[rows.len() - 1];
+        assert_eq!(last["id"], id);
+        assert_eq!(last["source"], "user");
+        assert_eq!(last["can_revert"], false, "nothing shipped to revert to");
+        assert_eq!(last["can_delete"], true);
+        assert_eq!(last["is_active"], true);
+        assert_eq!(rows[0]["can_delete"], false, "shipped rows cannot be deleted");
+    }
+
+    #[test]
+    fn a_custom_profile_can_be_applied_and_edited_like_any_other() {
+        let mut st = state();
+        let id = create(&mut st, "Mine");
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": "default"}), 0).unwrap();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": id}), 1).unwrap();
+        assert_eq!(st.active_id.as_deref(), Some(id.as_str()));
+        handle_request(
+            &mut st,
+            Method::SetBinding,
+            json!({
+                "profile_id": id,
+                "key_id": "kp01",
+                "action": { "type": "key", "key": "q", "modifiers": [] }
+            }),
+            2,
+        )
+        .unwrap();
+        let mine = read_user_profile(&st.paths, &id).unwrap();
+        assert_eq!(mine.bindings.len(), 1);
+    }
+
+    #[test]
+    fn delete_removes_a_custom_profile_and_falls_back_when_it_was_active() {
+        let mut st = state();
+        let id = create(&mut st, "Mine");
+        assert_eq!(st.active_id.as_deref(), Some(id.as_str()));
+        let v = handle_request(&mut st, Method::DeleteProfile, json!({"id": id}), 0).unwrap();
+        assert_eq!(v["active_id"], "default", "the pad is never left with nothing");
+        assert_eq!(st.active_id.as_deref(), Some("default"));
+        assert!(!row_ids(&mut st).contains(&id));
+    }
+
+    #[test]
+    fn delete_of_an_inactive_custom_profile_leaves_the_active_one_alone() {
+        let mut st = state();
+        let doomed = create(&mut st, "Doomed");
+        let keeper = create(&mut st, "Keeper");
+        assert_eq!(st.active_id.as_deref(), Some(keeper.as_str()));
+        handle_request(&mut st, Method::DeleteProfile, json!({"id": doomed}), 0).unwrap();
+        assert_eq!(st.active_id.as_deref(), Some(keeper.as_str()));
+    }
+
+    #[test]
+    fn delete_refuses_shipped_profiles_and_unknown_ids() {
+        let mut st = state();
+        for id in SHIPPED_IDS {
+            let err = handle_request(&mut st, Method::DeleteProfile, json!({"id": id}), 0)
+                .unwrap_err();
+            assert_eq!(err, ErrorCode::InvalidProfile, "{id} must not be deletable");
+        }
+        let err = handle_request(&mut st, Method::DeleteProfile, json!({"id": "nope"}), 0)
+            .unwrap_err();
+        assert_eq!(err, ErrorCode::NotFound);
     }
 
     #[test]

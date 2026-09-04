@@ -43,6 +43,65 @@ impl Profile {
     }
 }
 
+/// Joins the words of a slug. Also what a name's runs of punctuation and
+/// whitespace collapse to, so `My  Raid / Layout` becomes `my-raid-layout`.
+const SLUG_SEPARATOR: char = '-';
+/// What a name that has no usable characters at all becomes, so a profile
+/// named `!!!` still gets a valid id rather than an empty one.
+const SLUG_FALLBACK: &str = "profile";
+
+/// Turns a display name into a profile id that `valid_id` accepts and that
+/// none of `taken` already uses.
+///
+/// Lowercase ASCII letters and digits pass through; everything else collapses
+/// to one separator. A leading separator is dropped because an id must start
+/// with a letter or digit. A collision gets a numeric suffix: `layout`,
+/// `layout-2`, `layout-3`. The result is trimmed to the id length limit before
+/// the suffix is added, so the suffix is never what pushes it over.
+pub fn profile_id_for_name(name: &str, taken: &[String]) -> String {
+    let mut slug = String::with_capacity(name.len());
+    let mut pending_separator = false;
+    for ch in name.chars() {
+        let lowered = ch.to_ascii_lowercase();
+        if lowered.is_ascii_lowercase() || lowered.is_ascii_digit() {
+            if pending_separator && !slug.is_empty() {
+                slug.push(SLUG_SEPARATOR);
+            }
+            pending_separator = false;
+            slug.push(lowered);
+        } else {
+            pending_separator = true;
+        }
+    }
+    if slug.is_empty() {
+        slug.push_str(SLUG_FALLBACK);
+    }
+
+    // Leave room for the widest suffix this loop could ever need before the
+    // limit, so a long name plus `-99` still fits.
+    let suffix_room = SLUG_SEPARATOR.len_utf8() + SLUG_MAX_SUFFIX_DIGITS;
+    let base_max = PROFILE_ID_MAX_LEN.saturating_sub(suffix_room);
+    let base: String = slug.chars().take(base_max).collect();
+    let base = base.trim_end_matches(SLUG_SEPARATOR).to_owned();
+
+    if !taken.contains(&base) {
+        return base;
+    }
+    let mut counter: u32 = SLUG_FIRST_SUFFIX;
+    loop {
+        let candidate = format!("{base}{SLUG_SEPARATOR}{counter}");
+        if !taken.contains(&candidate) {
+            return candidate;
+        }
+        counter += 1;
+    }
+}
+
+/// The second copy of a name is `-2`, never `-1`: the first has no suffix.
+const SLUG_FIRST_SUFFIX: u32 = 2;
+/// Digits reserved for the collision suffix when trimming the base.
+const SLUG_MAX_SUFFIX_DIGITS: usize = 2;
+
 fn valid_id(id: &str) -> bool {
     let bytes = id.as_bytes();
     if bytes.is_empty() || bytes.len() > PROFILE_ID_MAX_LEN {
@@ -148,6 +207,66 @@ mod tests {
           },
           "lighting": { "effect": "static", "brightness": 80, "color": [0, 180, 255] }
         }"#
+    }
+
+    fn taken(ids: &[&str]) -> Vec<String> {
+        ids.iter().map(|id| (*id).to_owned()).collect()
+    }
+
+    #[test]
+    fn a_plain_name_slugs_to_lowercase_hyphens() {
+        assert_eq!(profile_id_for_name("My Raid Layout", &[]), "my-raid-layout");
+    }
+
+    #[test]
+    fn punctuation_and_repeated_spaces_collapse_to_one_separator() {
+        assert_eq!(
+            profile_id_for_name("  My  Raid / Layout!! ", &[]),
+            "my-raid-layout"
+        );
+    }
+
+    #[test]
+    fn a_leading_symbol_does_not_produce_a_leading_separator() {
+        // An id must start with a letter or digit.
+        assert_eq!(profile_id_for_name("#1 Setup", &[]), "1-setup");
+    }
+
+    #[test]
+    fn a_name_with_nothing_usable_still_gets_a_valid_id() {
+        assert_eq!(profile_id_for_name("!!!", &[]), SLUG_FALLBACK);
+        assert!(valid_id(&profile_id_for_name("!!!", &[])));
+    }
+
+    #[test]
+    fn a_collision_gets_a_numbered_suffix_starting_at_two() {
+        assert_eq!(
+            profile_id_for_name("Layout", &taken(&["layout"])),
+            "layout-2"
+        );
+        assert_eq!(
+            profile_id_for_name("Layout", &taken(&["layout", "layout-2"])),
+            "layout-3"
+        );
+    }
+
+    #[test]
+    fn a_suffix_never_pushes_an_id_over_the_length_limit() {
+        let long = "x".repeat(PROFILE_ID_MAX_LEN * 2);
+        let first = profile_id_for_name(&long, &[]);
+        assert!(valid_id(&first), "trimmed base must be a valid id");
+        let second = profile_id_for_name(&long, std::slice::from_ref(&first));
+        assert!(valid_id(&second), "suffixed id must still be valid: {second}");
+        assert!(second.ends_with("-2"));
+        assert!(second.len() <= PROFILE_ID_MAX_LEN);
+    }
+
+    #[test]
+    fn every_generated_id_passes_the_same_rule_profiles_are_validated_by() {
+        for name in ["Default", "Über Setup", "123", "a-b-c", "Trailing-", "-Leading"] {
+            let id = profile_id_for_name(name, &[]);
+            assert!(valid_id(&id), "{name:?} produced invalid id {id:?}");
+        }
     }
 
     #[test]

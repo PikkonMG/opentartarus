@@ -57,6 +57,19 @@ pub fn is_combo_id(id: Option<&Id>) -> bool {
     id == Some(&combo_widget_id())
 }
 
+/// The inline name box for a new profile. It has its own id so keystrokes
+/// typed into it are never mistaken for a key binding: the combo capture only
+/// fires for `COMBO_INPUT_ID`.
+pub const NEW_PROFILE_INPUT_ID: &str = "new-profile-name";
+
+pub fn new_profile_widget_id() -> Id {
+    Id::new(NEW_PROFILE_INPUT_ID)
+}
+
+pub fn is_new_profile_id(id: Option<&Id>) -> bool {
+    id == Some(&new_profile_widget_id())
+}
+
 pub fn focused_widget_id() -> impl Operation<Option<Id>> {
     struct FocusedId {
         focused: Option<Id>,

@@ -411,6 +411,8 @@ pub enum GameId {
     GuildWars2,
     ElderScrollsOnline,
     Minecraft,
+    /// A profile the user made, not one from the shipped pack.
+    Custom,
 }
 
 #[derive(Debug, Deserialize)]

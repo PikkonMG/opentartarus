@@ -10,8 +10,14 @@ pub struct AppStateFile {
     pub active_profile_id: String,
 }
 
+/// Profiles live as `<id>.json`. One constant, used to write the path and to
+/// recognise a file when listing the directory, so the two cannot disagree.
+const PROFILE_FILE_EXTENSION: &str = "json";
+
 fn profile_path(paths: &Paths, id: &str) -> PathBuf {
-    paths.profiles_dir.join(format!("{id}.json"))
+    paths
+        .profiles_dir
+        .join(format!("{id}.{PROFILE_FILE_EXTENSION}"))
 }
 
 fn ensure_profile_dirs(paths: &Paths) -> Result<(), ErrorCode> {
@@ -51,6 +57,44 @@ pub fn copy_on_apply(
     }
     fs::write(&path, shipped_json.as_bytes()).map_err(|_| ErrorCode::Io)?;
     parse_profile(shipped_json.as_bytes())
+}
+
+/// Every profile id that has a file in the user's profiles directory, in
+/// filename order. A missing directory is an empty list, not an error: a
+/// fresh install has no user profiles yet.
+pub fn list_user_profile_ids(paths: &Paths) -> Result<Vec<String>, ErrorCode> {
+    let entries = match fs::read_dir(&paths.profiles_dir) {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err(ErrorCode::Io),
+    };
+    let mut ids = Vec::new();
+    for entry in entries {
+        let path = entry.map_err(|_| ErrorCode::Io)?.path();
+        let is_json = path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .map(|ext| ext == PROFILE_FILE_EXTENSION)
+            .unwrap_or(false);
+        if !is_json {
+            continue;
+        }
+        if let Some(stem) = path.file_stem().and_then(|stem| stem.to_str()) {
+            ids.push(stem.to_owned());
+        }
+    }
+    ids.sort();
+    Ok(ids)
+}
+
+/// Removes a user profile's file. Deleting one that is not there is not an
+/// error: the end state the caller wanted is the state it is in.
+pub fn delete_user_profile(paths: &Paths, id: &str) -> Result<(), ErrorCode> {
+    match fs::remove_file(profile_path(paths, id)) {
+        Ok(()) => Ok(()),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err(ErrorCode::Io),
+    }
 }
 
 pub fn revert_to_shipped(
@@ -105,6 +149,47 @@ mod tests {
       "bindings": {},
       "lighting": { "effect": "none", "brightness": 80 }
     }"#;
+
+    #[test]
+    fn listing_a_fresh_install_is_empty_not_an_error() {
+        let paths = tmp_paths();
+        assert!(!paths.profiles_dir.exists(), "fresh: no profiles dir yet");
+        assert_eq!(list_user_profile_ids(&paths).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn listing_finds_json_profiles_sorted_and_ignores_other_files() {
+        let paths = tmp_paths();
+        copy_on_apply(&paths, SHIPPED, "zeta").unwrap();
+        copy_on_apply(&paths, SHIPPED, "alpha").unwrap();
+        fs::write(paths.profiles_dir.join("notes.txt"), b"not a profile").unwrap();
+        fs::write(paths.profiles_dir.join("stray.json.bak"), b"{}").unwrap();
+        assert_eq!(
+            list_user_profile_ids(&paths).unwrap(),
+            vec!["alpha".to_owned(), "zeta".to_owned()]
+        );
+    }
+
+    #[test]
+    fn deleting_removes_the_file_and_is_idempotent() {
+        let paths = tmp_paths();
+        copy_on_apply(&paths, SHIPPED, "mine").unwrap();
+        assert!(paths.profiles_dir.join("mine.json").exists());
+        delete_user_profile(&paths, "mine").unwrap();
+        assert!(!paths.profiles_dir.join("mine.json").exists());
+        // A second delete of a missing profile is the state we wanted.
+        delete_user_profile(&paths, "mine").unwrap();
+        assert_eq!(list_user_profile_ids(&paths).unwrap(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn deleting_one_profile_leaves_the_others() {
+        let paths = tmp_paths();
+        copy_on_apply(&paths, SHIPPED, "keep").unwrap();
+        copy_on_apply(&paths, SHIPPED, "drop").unwrap();
+        delete_user_profile(&paths, "drop").unwrap();
+        assert_eq!(list_user_profile_ids(&paths).unwrap(), vec!["keep".to_owned()]);
+    }
 
     #[test]
     fn copy_on_apply_creates_user_file_and_does_not_mutate_shipped_bytes() {

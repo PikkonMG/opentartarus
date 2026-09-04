@@ -60,6 +60,8 @@ pub enum Method {
     SubmitRecord,
     SetLighting,
     RevertProfile,
+    CreateProfile,
+    DeleteProfile,
     ShowWindow,
     QuitDaemon,
 }
