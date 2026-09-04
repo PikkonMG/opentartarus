@@ -513,6 +513,7 @@ mod tests {
             },
             unknown_key_ids: false,
             setup_note: None,
+            shipped_revision: None,
         };
         p.bindings.insert(KeyId::Kp01, kp01);
         let mut e = RemapEngine::new(DeviceModel::V2);
@@ -728,6 +729,7 @@ mod tests {
             },
             unknown_key_ids: false,
             setup_note: None,
+            shipped_revision: None,
         };
         p.bindings.insert(id, action);
         let mut e = RemapEngine::new(model);
@@ -942,6 +944,7 @@ mod tests {
             },
             unknown_key_ids: false,
             setup_note: None,
+            shipped_revision: None,
         };
         p.bindings.insert(
             KeyId::Kp01,
@@ -982,11 +985,7 @@ mod tests {
         assert!(s.0.iter().any(|x| x.code == q && x.value == 1));
         let one = crate::keymap::token_to_evdev(KeyToken::Num1);
         e.handle(press_kp01(), &mut s, &mut c);
-        let ones = s
-            .0
-            .iter()
-            .filter(|x| x.code == one && x.value == 1)
-            .count();
+        let ones = s.0.iter().filter(|x| x.code == one && x.value == 1).count();
         assert_eq!(ones, 1, "second macro press is ignored while busy");
     }
 

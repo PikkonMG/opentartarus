@@ -7,11 +7,12 @@ Thanks for helping. This page says how to build, what a change needs before it i
 You need Rust 1.75 or newer. Build and run the two binaries as the README describes. Before you open a pull request, run:
 
 ```
+cargo fmt --all --check
 cargo test --workspace
-cargo clippy --workspace --all-targets
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Every test must pass. Clippy must not report anything new. The workspace carries a small number of pre-existing warnings, so compare against `main` rather than aiming for zero. The CI workflow runs both on every push and pull request, and fails if the warning count rises above the baseline in `.github/workflows/ci.yml`.
+All three must be clean. `main` is clean, so a failure is something your change introduced. CI runs the same three on every push and pull request.
 
 If you have a Tartarus V2 and OpenRazer, the hardware test runs with `OPENTARTARUS_HW_TEST=1`. It is skipped otherwise.
 
@@ -20,6 +21,7 @@ If you have a Tartarus V2 and OpenRazer, the hardware test runs with `OPENTARTAR
 - A test for each new function. Tests should fail when the code is wrong, not just call the function.
 - No magic numbers. Sizes, limits, colours and timings are named constants next to the code that uses them.
 - No dead code, no placeholders, no half-finished paths.
+- Editing a shipped profile in the app must clear its `shipped_revision` mark, or a later pack update will overwrite the user's work. `persist_profile` in the daemon does this for every edit path.
 - Handle the specific error. A catch-all that swallows everything hides bugs.
 - Keep the layers apart. Profile validation lives in `opentartarus-core`. The daemon plays remaps and talks to the device. The window only draws and sends requests.
 - User-facing strings in the window live in `crates/opentartarus-ui/src/theme/strings.rs`, not inline in views.

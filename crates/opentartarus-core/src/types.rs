@@ -449,6 +449,8 @@ struct ProfileDe {
     lighting: Lighting,
     #[serde(default)]
     setup_note: Option<String>,
+    #[serde(default)]
+    shipped_revision: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -466,6 +468,12 @@ pub struct Profile {
     /// need one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub setup_note: Option<String>,
+    /// Set only on a user's copy of a shipped profile that the user has not
+    /// changed, and holds the revision of the shipped content it came from.
+    /// When the pack ships a new layout, such a copy is replaced; an edited
+    /// copy has `None` here and is never touched. See `store::copy_on_apply`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shipped_revision: Option<String>,
     #[serde(skip)]
     pub(crate) unknown_key_ids: bool,
 }
@@ -492,6 +500,7 @@ impl From<ProfileDe> for Profile {
             bindings,
             lighting: raw.lighting,
             setup_note: raw.setup_note,
+            shipped_revision: raw.shipped_revision,
             unknown_key_ids,
         }
     }

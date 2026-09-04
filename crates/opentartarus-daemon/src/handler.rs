@@ -10,9 +10,15 @@ use opentartarus_core::pack::{is_shipped, shipped_json, shipped_profile, SHIPPED
 use opentartarus_core::paths::Paths;
 use opentartarus_core::record::{RecordOutcome, Recorder};
 use opentartarus_core::remap::RemapEngine;
+use opentartarus_core::store::{
+    copy_on_apply, delete_user_profile, list_user_profile_ids, read_user_profile,
+    revert_to_shipped, write_active_id, write_profile,
+};
+use opentartarus_core::types::{
+    Action, DeviceModel, GameId, KeyId, KeyToken, Lighting, Modifier, MouseButton, MouseTarget,
+    Profile, ProfileSwitch, ScrollDir,
+};
 use opentartarus_core::validate::profile_id_for_name;
-use opentartarus_core::store::{copy_on_apply, delete_user_profile, list_user_profile_ids, read_user_profile, revert_to_shipped, write_active_id, write_profile};
-use opentartarus_core::types::{Action, DeviceModel, GameId, KeyId, KeyToken, Lighting, Modifier, MouseButton, MouseTarget, Profile, ProfileSwitch, ScrollDir};
 use serde_json::{json, Value};
 
 const PROFILE_SOURCE_USER: &str = "user";
@@ -131,7 +137,11 @@ fn list_profiles<L: LightingClient>(state: &DaemonState<L>) -> Result<Value, Err
         profiles.push(profile_row(
             state,
             &profile,
-            if user_exists { PROFILE_SOURCE_USER } else { PROFILE_SOURCE_SHIPPED },
+            if user_exists {
+                PROFILE_SOURCE_USER
+            } else {
+                PROFILE_SOURCE_SHIPPED
+            },
         ));
     }
     for id in list_user_profile_ids(&state.paths)? {
@@ -144,7 +154,11 @@ fn list_profiles<L: LightingClient>(state: &DaemonState<L>) -> Result<Value, Err
     Ok(json!({ "profiles": profiles }))
 }
 
-fn profile_row<L: LightingClient>(state: &DaemonState<L>, profile: &Profile, source: &str) -> Value {
+fn profile_row<L: LightingClient>(
+    state: &DaemonState<L>,
+    profile: &Profile,
+    source: &str,
+) -> Value {
     let shipped = is_shipped(&profile.id);
     json!({
         "id": profile.id,
@@ -217,12 +231,16 @@ fn load_user_copy<L: LightingClient>(
     }
 }
 
+/// Saves a profile the user has just changed. Clearing the revision mark is
+/// what tells `copy_on_apply` never to replace this file with a newer shipped
+/// layout: the moment a profile is edited it stops being a copy of the pack.
 fn persist_profile<L: LightingClient>(
     state: &mut DaemonState<L>,
-    profile: &Profile,
+    profile: &mut Profile,
     apply_lights: bool,
 ) -> Result<(), ErrorCode> {
     profile.validate()?;
+    profile.shipped_revision = None;
     write_profile(&state.paths, profile)?;
     apply_if_active(state, profile, apply_lights)
 }
@@ -238,10 +256,7 @@ fn apply_profile<L: LightingClient>(
 /// Makes `id` the live profile: loads its editable copy, pushes it into the
 /// remap engine, records it as active, and applies its lighting. Shared by
 /// apply, create, and the fallback after deleting the active profile.
-fn activate<L: LightingClient>(
-    state: &mut DaemonState<L>,
-    id: &str,
-) -> Result<Value, ErrorCode> {
+fn activate<L: LightingClient>(state: &mut DaemonState<L>, id: &str) -> Result<Value, ErrorCode> {
     let profile = load_user_copy(state, id)?;
     profile.validate()?;
     state.engine.apply_profile(&profile);
@@ -262,7 +277,7 @@ fn set_binding<L: LightingClient>(
             .map_err(|_| ErrorCode::InvalidProfile)?;
     let mut profile = load_user_copy(state, &profile_id)?;
     profile.bindings.insert(key_id, action);
-    persist_profile(state, &profile, false)?;
+    persist_profile(state, &mut profile, false)?;
     Ok(json!({ "id": profile_id }))
 }
 
@@ -274,7 +289,7 @@ fn clear_binding<L: LightingClient>(
     let key_id = param_key_id(params)?;
     let mut profile = load_user_copy(state, &profile_id)?;
     profile.bindings.remove(&key_id);
-    persist_profile(state, &profile, false)?;
+    persist_profile(state, &mut profile, false)?;
     Ok(json!({ "id": profile_id }))
 }
 
@@ -335,7 +350,7 @@ fn submit_record<L: LightingClient>(
         RecordOutcome::Recorded { key_id, action } => {
             let mut profile = load_user_copy(state, &profile_id)?;
             profile.bindings.insert(key_id, action.clone());
-            persist_profile(state, &profile, false)?;
+            persist_profile(state, &mut profile, false)?;
             Ok(json!({
                 "key_id": key_id,
                 "action": action,
@@ -355,7 +370,7 @@ fn set_lighting<L: LightingClient>(
             .map_err(|_| ErrorCode::InvalidProfile)?;
     let mut profile = load_user_copy(state, &profile_id)?;
     profile.lighting = lighting;
-    persist_profile(state, &profile, true)?;
+    persist_profile(state, &mut profile, true)?;
     Ok(json!({ "id": profile_id }))
 }
 
@@ -396,6 +411,9 @@ fn create_profile<L: LightingClient>(
     profile.id = id.clone();
     profile.name = name.trim().to_owned();
     profile.game = GameId::Custom;
+    // A custom profile is the user's own from here on. It must not follow
+    // the layout it was copied from when the pack changes.
+    profile.shipped_revision = None;
     profile.validate()?;
     write_profile(&state.paths, &profile)?;
     activate(state, &id)
@@ -509,13 +527,7 @@ mod tests {
     #[test]
     fn apply_set_binding_and_status() {
         let mut st = state();
-        let v = handle_request(
-            &mut st,
-            Method::ApplyProfile,
-            json!({"id":"dota-2"}),
-            0,
-        )
-        .unwrap();
+        let v = handle_request(&mut st, Method::ApplyProfile, json!({"id":"dota-2"}), 0).unwrap();
         assert_eq!(v["id"], "dota-2");
         assert_eq!(st.active_id.as_deref(), Some("dota-2"));
         handle_request(
@@ -600,8 +612,7 @@ mod tests {
     #[test]
     fn create_copies_the_active_profile_under_a_new_name_and_activates_it() {
         let mut st = state();
-        handle_request(&mut st, Method::ApplyProfile, json!({"id": "dota-2"}), 0)
-            .unwrap();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": "dota-2"}), 0).unwrap();
         let id = create(&mut st, "My Raid Layout");
         assert_eq!(id, "my-raid-layout");
         assert_eq!(st.active_id.as_deref(), Some("my-raid-layout"));
@@ -610,7 +621,10 @@ mod tests {
         let dota = shipped_profile("dota-2").unwrap();
         assert_eq!(mine.name, "My Raid Layout");
         assert_eq!(mine.game, GameId::Custom);
-        assert_eq!(mine.bindings, dota.bindings, "starts as a copy of the source");
+        assert_eq!(
+            mine.bindings, dota.bindings,
+            "starts as a copy of the source"
+        );
         assert_eq!(mine.lighting, dota.lighting);
     }
 
@@ -675,7 +689,10 @@ mod tests {
         assert_eq!(last["can_revert"], false, "nothing shipped to revert to");
         assert_eq!(last["can_delete"], true);
         assert_eq!(last["is_active"], true);
-        assert_eq!(rows[0]["can_delete"], false, "shipped rows cannot be deleted");
+        assert_eq!(
+            rows[0]["can_delete"], false,
+            "shipped rows cannot be deleted"
+        );
     }
 
     #[test]
@@ -713,7 +730,10 @@ mod tests {
         let id = create(&mut st, "Mine");
         assert_eq!(st.active_id.as_deref(), Some(id.as_str()));
         let v = handle_request(&mut st, Method::DeleteProfile, json!({"id": id}), 0).unwrap();
-        assert_eq!(v["active_id"], "default", "the pad is never left with nothing");
+        assert_eq!(
+            v["active_id"], "default",
+            "the pad is never left with nothing"
+        );
         assert_eq!(st.active_id.as_deref(), Some("default"));
         assert!(!row_ids(&mut st).contains(&id));
     }
@@ -732,12 +752,12 @@ mod tests {
     fn delete_refuses_shipped_profiles_and_unknown_ids() {
         let mut st = state();
         for id in SHIPPED_IDS {
-            let err = handle_request(&mut st, Method::DeleteProfile, json!({"id": id}), 0)
-                .unwrap_err();
+            let err =
+                handle_request(&mut st, Method::DeleteProfile, json!({"id": id}), 0).unwrap_err();
             assert_eq!(err, ErrorCode::InvalidProfile, "{id} must not be deletable");
         }
-        let err = handle_request(&mut st, Method::DeleteProfile, json!({"id": "nope"}), 0)
-            .unwrap_err();
+        let err =
+            handle_request(&mut st, Method::DeleteProfile, json!({"id": "nope"}), 0).unwrap_err();
         assert_eq!(err, ErrorCode::NotFound);
     }
 
@@ -788,7 +808,7 @@ mod tests {
         st.lighting.available = false;
         let v = handle_request(&mut st, Method::ApplyProfile, json!({"id":"default"}), 0).unwrap();
         assert_eq!(v["id"], "default");
-        assert_eq!(st.openrazer_available, false);
+        assert!(!st.openrazer_available);
     }
 
     #[test]
@@ -915,13 +935,20 @@ mod tests {
         let mut st = state();
         handle_request(&mut st, Method::ApplyProfile, json!({"id": "default"}), 0).unwrap();
         let second = SHIPPED_IDS[1];
-        assert_eq!(switch_profile(&mut st, &ProfileSwitch::Next).unwrap(), second);
+        assert_eq!(
+            switch_profile(&mut st, &ProfileSwitch::Next).unwrap(),
+            second
+        );
         assert_eq!(st.active_id.as_deref(), Some(second));
 
         let last = SHIPPED_IDS[SHIPPED_IDS.len() - 1];
         handle_request(&mut st, Method::ApplyProfile, json!({"id": last}), 0).unwrap();
         switch_profile(&mut st, &ProfileSwitch::Next).unwrap();
-        assert_eq!(st.active_id.as_deref(), Some("default"), "wraps to the first");
+        assert_eq!(
+            st.active_id.as_deref(),
+            Some("default"),
+            "wraps to the first"
+        );
     }
 
     #[test]
@@ -961,5 +988,54 @@ mod tests {
         let mut st = state();
         switch_profile(&mut st, &ProfileSwitch::Next).unwrap();
         assert_eq!(st.active_id.as_deref(), Some(SHIPPED_IDS[0]));
+    }
+
+    #[test]
+    fn applying_a_shipped_profile_marks_the_copy_and_editing_it_clears_the_mark() {
+        let mut st = state();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": "dota-2"}), 0).unwrap();
+        let fresh = read_user_profile(&st.paths, "dota-2").unwrap();
+        assert_eq!(
+            fresh.shipped_revision.as_deref(),
+            Some(
+                opentartarus_core::store::content_revision(
+                    shipped_json("dota-2").unwrap().as_bytes()
+                )
+                .as_str()
+            ),
+            "an untouched copy tracks the pack, so a better layout can reach it"
+        );
+
+        handle_request(
+            &mut st,
+            Method::SetBinding,
+            json!({"profile_id":"dota-2","key_id":"kp01","action":{"type":"key","key":"c","modifiers":[]}}),
+            1,
+        )
+        .unwrap();
+        let edited = read_user_profile(&st.paths, "dota-2").unwrap();
+        assert_eq!(
+            edited.shipped_revision, None,
+            "an edited profile must never be replaced by a pack update"
+        );
+
+        handle_request(&mut st, Method::RevertProfile, json!({"id": "dota-2"}), 2).unwrap();
+        let reverted = read_user_profile(&st.paths, "dota-2").unwrap();
+        assert!(
+            reverted.shipped_revision.is_some(),
+            "reverting puts the copy back under the pack's care"
+        );
+    }
+
+    #[test]
+    fn a_custom_profile_never_follows_the_pack() {
+        let mut st = state();
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": "dota-2"}), 0).unwrap();
+        let id = create(&mut st, "My Own");
+        let mine = read_user_profile(&st.paths, &id).unwrap();
+        assert_eq!(
+            mine.shipped_revision, None,
+            "a copy made by the user is theirs, not the pack's"
+        );
     }
 }

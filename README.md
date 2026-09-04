@@ -36,7 +36,7 @@ The other eleven are built from each game's default PC bindings: Counter-Strike 
 
 You can make your own profiles. "+ New profile" at the bottom of the list copies whatever is selected under a new name. Custom profiles get a delete button. Shipped profiles cannot be deleted, but any edit to one can be undone with "Revert to shipped".
 
-The first time you apply a shipped profile the app copies it into `~/.config/opentartarus/profiles/`. Edits go to that copy. The copy is never refreshed on its own, so if a later version of the app ships a better layout for a game, press "Revert to shipped" to pick it up.
+The first time you apply a shipped profile the app copies it into `~/.config/opentartarus/profiles/`. Edits go to that copy. A copy you have never edited follows the app: when a new version ships a better layout for that game, your copy is replaced with it. The moment you change one key, the copy becomes yours and the app stops touching it. "Revert to shipped" throws your changes away and puts it back under the app's care.
 
 ## Game rules
 

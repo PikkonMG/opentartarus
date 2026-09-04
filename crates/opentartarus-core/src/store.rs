@@ -45,18 +45,61 @@ pub fn read_user_profile(paths: &Paths, id: &str) -> Result<Profile, ErrorCode> 
     parse_profile(&bytes)
 }
 
-pub fn copy_on_apply(
+/// FNV-1a, 64 bit. This marks which revision of a shipped profile a user's
+/// copy was made from. It only has to change when the shipped bytes change
+/// and be identical on every machine and every Rust release, which is why it
+/// is written out here rather than taken from `DefaultHasher`: that one is
+/// explicitly not stable across releases, so a stored value would rot.
+const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
+
+pub fn content_revision(bytes: &[u8]) -> String {
+    let mut hash = FNV_OFFSET_BASIS;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(FNV_PRIME);
+    }
+    format!("{hash:016x}")
+}
+
+/// Writes the shipped content as the user's copy and marks it as untouched,
+/// so a later pack update can recognise it and replace it. The file is named
+/// by `id`, the profile the caller asked for, which is what every other
+/// function here uses to find it again.
+fn write_shipped_copy(
     paths: &Paths,
     shipped_json: &str,
     id: &str,
+    revision: &str,
 ) -> Result<Profile, ErrorCode> {
+    let mut profile = parse_profile(shipped_json.as_bytes())?;
+    profile.shipped_revision = Some(revision.to_owned());
     ensure_profile_dirs(paths)?;
-    let path = profile_path(paths, id);
-    if path.exists() {
-        return read_user_profile(paths, id);
+    let json = serde_json::to_vec_pretty(&profile).map_err(|_| ErrorCode::InvalidProfile)?;
+    fs::write(profile_path(paths, id), json).map_err(|_| ErrorCode::Io)?;
+    Ok(profile)
+}
+
+/// The editable copy of a shipped profile, created on first use.
+///
+/// A copy the user has never changed is replaced whenever the pack ships
+/// different content, so an improved layout reaches players instead of
+/// sitting behind a copy made months ago. A copy the user has edited carries
+/// no revision mark and is always kept: their work is never overwritten
+/// without them asking, which is what `revert_to_shipped` is for.
+pub fn copy_on_apply(paths: &Paths, shipped_json: &str, id: &str) -> Result<Profile, ErrorCode> {
+    ensure_profile_dirs(paths)?;
+    let revision = content_revision(shipped_json.as_bytes());
+    if profile_path(paths, id).exists() {
+        let existing = read_user_profile(paths, id)?;
+        let is_untouched_and_current =
+            existing.shipped_revision.as_deref() == Some(revision.as_str());
+        let is_edited = existing.shipped_revision.is_none();
+        if is_untouched_and_current || is_edited {
+            return Ok(existing);
+        }
     }
-    fs::write(&path, shipped_json.as_bytes()).map_err(|_| ErrorCode::Io)?;
-    parse_profile(shipped_json.as_bytes())
+    write_shipped_copy(paths, shipped_json, id, &revision)
 }
 
 /// Every profile id that has a file in the user's profiles directory, in
@@ -97,15 +140,15 @@ pub fn delete_user_profile(paths: &Paths, id: &str) -> Result<(), ErrorCode> {
     }
 }
 
+/// Throws away the user's edits and puts the shipped content back. The copy
+/// is marked untouched again, so it follows later pack updates.
 pub fn revert_to_shipped(
     paths: &Paths,
     shipped_json: &str,
     id: &str,
 ) -> Result<Profile, ErrorCode> {
-    ensure_profile_dirs(paths)?;
-    let path = profile_path(paths, id);
-    fs::write(&path, shipped_json.as_bytes()).map_err(|_| ErrorCode::Io)?;
-    parse_profile(shipped_json.as_bytes())
+    let revision = content_revision(shipped_json.as_bytes());
+    write_shipped_copy(paths, shipped_json, id, &revision)
 }
 
 pub fn write_active_id(paths: &Paths, id: &str) -> Result<(), ErrorCode> {
@@ -135,7 +178,10 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn tmp_paths() -> Paths {
-        let n = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         let root = std::env::temp_dir().join(format!("opentartarus-store-{n}"));
         fs::create_dir_all(&root).unwrap();
         Paths::from_dirs(root.join("cfg"), root.join("run"), root.join("state"))
@@ -188,25 +234,110 @@ mod tests {
         copy_on_apply(&paths, SHIPPED, "keep").unwrap();
         copy_on_apply(&paths, SHIPPED, "drop").unwrap();
         delete_user_profile(&paths, "drop").unwrap();
-        assert_eq!(list_user_profile_ids(&paths).unwrap(), vec!["keep".to_owned()]);
+        assert_eq!(
+            list_user_profile_ids(&paths).unwrap(),
+            vec!["keep".to_owned()]
+        );
     }
 
     #[test]
-    fn copy_on_apply_creates_user_file_and_does_not_mutate_shipped_bytes() {
+    fn copy_on_apply_creates_a_marked_user_file_and_keeps_a_hand_edited_one() {
         let paths = tmp_paths();
         let p = copy_on_apply(&paths, SHIPPED, "default").unwrap();
         assert_eq!(p.id, "default");
-        let on_disk = fs::read_to_string(paths.profiles_dir.join("default.json")).unwrap();
-        assert_eq!(on_disk, SHIPPED);
+        assert_eq!(
+            p.shipped_revision.as_deref(),
+            Some(content_revision(SHIPPED.as_bytes()).as_str()),
+            "a fresh copy is marked with the revision it came from"
+        );
+        let stored = read_user_profile(&paths, "default").unwrap();
+        assert_eq!(stored.name, "Default");
+        assert_eq!(stored.bindings, p.bindings);
+
+        // A file edited outside the app carries no mark, so it is left alone.
         let mutated = SHIPPED.replace("Default", "Hacked");
         fs::write(paths.profiles_dir.join("default.json"), mutated.as_bytes()).unwrap();
         let again = copy_on_apply(&paths, SHIPPED, "default").unwrap();
         assert_eq!(again.name, "Hacked");
-        assert_eq!(SHIPPED.contains("Default"), true);
+        assert!(SHIPPED.contains("Default"), "the shipped text is untouched");
     }
 
     #[test]
-    fn revert_overwrites_user_file_with_shipped_bytes() {
+    fn an_untouched_copy_follows_a_pack_update() {
+        let paths = tmp_paths();
+        copy_on_apply(&paths, SHIPPED, "default").unwrap();
+        let newer = SHIPPED.replace(
+            r#""bindings": {}"#,
+            r#""bindings": { "kp01": { "type": "key", "key": "q", "modifiers": [] } }"#,
+        );
+        let refreshed = copy_on_apply(&paths, &newer, "default").unwrap();
+        assert_eq!(
+            refreshed.bindings.len(),
+            1,
+            "the new layout replaced the old copy"
+        );
+        assert_eq!(
+            refreshed.shipped_revision.as_deref(),
+            Some(content_revision(newer.as_bytes()).as_str()),
+            "and is marked with the new revision"
+        );
+        // Applying the same pack content again is a no-op, not a rewrite.
+        let same = copy_on_apply(&paths, &newer, "default").unwrap();
+        assert_eq!(same.shipped_revision, refreshed.shipped_revision);
+    }
+
+    #[test]
+    fn an_edited_copy_survives_a_pack_update() {
+        let paths = tmp_paths();
+        let mut mine = copy_on_apply(&paths, SHIPPED, "default").unwrap();
+        // What the daemon does on any edit: drop the mark, then write.
+        mine.name = "Mine".into();
+        mine.shipped_revision = None;
+        write_profile(&paths, &mine).unwrap();
+
+        let newer = SHIPPED.replace("Default", "Renamed Upstream");
+        let after = copy_on_apply(&paths, &newer, "default").unwrap();
+        assert_eq!(
+            after.name, "Mine",
+            "a pack update must not discard user edits"
+        );
+        assert_eq!(after.shipped_revision, None);
+    }
+
+    #[test]
+    fn revert_restores_shipped_content_and_marks_it_untouched_again() {
+        let paths = tmp_paths();
+        let mut mine = copy_on_apply(&paths, SHIPPED, "default").unwrap();
+        mine.name = "Mine".into();
+        mine.shipped_revision = None;
+        write_profile(&paths, &mine).unwrap();
+
+        let reverted = revert_to_shipped(&paths, SHIPPED, "default").unwrap();
+        assert_eq!(reverted.name, "Default");
+        assert_eq!(
+            reverted.shipped_revision.as_deref(),
+            Some(content_revision(SHIPPED.as_bytes()).as_str()),
+            "a reverted copy follows pack updates again"
+        );
+    }
+
+    #[test]
+    fn a_content_revision_is_stable_and_changes_with_the_content() {
+        let once = content_revision(SHIPPED.as_bytes());
+        assert_eq!(
+            once,
+            content_revision(SHIPPED.as_bytes()),
+            "same bytes, same value"
+        );
+        assert_ne!(
+            once,
+            content_revision(SHIPPED.replace("80", "70").as_bytes())
+        );
+        assert_eq!(once.len(), 16, "a fixed-width hex string");
+    }
+
+    #[test]
+    fn revert_overwrites_a_hand_edited_user_file() {
         let paths = tmp_paths();
         copy_on_apply(&paths, SHIPPED, "default").unwrap();
         fs::write(
@@ -217,8 +348,8 @@ mod tests {
         let p = revert_to_shipped(&paths, SHIPPED, "default").unwrap();
         assert_eq!(p.name, "Default");
         assert_eq!(
-            fs::read_to_string(paths.profiles_dir.join("default.json")).unwrap(),
-            SHIPPED
+            read_user_profile(&paths, "default").unwrap().name,
+            "Default"
         );
     }
 
