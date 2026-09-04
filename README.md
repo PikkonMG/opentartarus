@@ -54,11 +54,11 @@ Packages are on the Releases page: https://github.com/PikkonMG/opentartarus/rele
 
 - Debian, Ubuntu, Mint, Pop!_OS: `sudo apt install ./opentartarus_*_amd64.deb`
 - Fedora, openSUSE, RHEL: `sudo dnf install ./opentartarus-*.x86_64.rpm`
-- Any distro: make the AppImage executable and run it.
+- Other distros: build from source, as described below.
 
-The deb and the rpm install the udev rule, the polkit policy and the permissions helper. After installing one, open the app and press "Fix permissions" once, then unplug and replug the keypad. The AppImage cannot install system files, so its users add the group and the udev rule by hand; the release notes give the four commands.
+Both packages install the udev rule, the polkit policy and the permissions helper. After installing one, open the app and press "Fix permissions" once, then unplug and replug the keypad. There is no AppImage: it could not install those system files, so the keypad would stay locked until the user did it by hand.
 
-A release is built by the GitHub workflow in `.github/workflows/release.yml`. It is started by hand from the Actions tab with the tag to publish, and it refuses a tag that does not match the version in `Cargo.toml`. It builds the deb with `cargo-deb`, the rpm with `cargo-generate-rpm` and the AppImage with `packaging/appimage/build.sh`, then creates the release with all three attached.
+A release is built by the GitHub workflow in `.github/workflows/release.yml`. It is started by hand from the Actions tab with the tag to publish, and it refuses a tag that does not match the version in `Cargo.toml`. It builds the deb with `cargo-deb` and the rpm with `cargo-generate-rpm`, then creates the release with both attached.
 
 ## How to build and run
 
@@ -123,7 +123,7 @@ The last line is optional. Most desktops pick the file up on the next login.
   - `opentartarus-daemon`: tray process, device grab, remap playback, lighting
   - `opentartarus-ui`: the iced window
   - `opentartarus-fix-permissions`: polkit helper that installs the udev rule
-- `packaging/`: udev rule, systemd user unit, polkit policy, desktop entry, login autostart, icons, the deb postinst, the AppImage script and the release notes
+- `packaging/`: udev rule, systemd user unit, polkit policy, desktop entry, login autostart, icons, the deb postinst and the release notes
 
 ## License
 

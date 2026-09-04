@@ -1,5 +1,5 @@
-# Builds the deb, the rpm and the AppImage, and publishes them as a GitHub
-# release. Started by hand from the Actions tab; nothing runs on push.
+# Builds the deb and the rpm, and publishes them as a GitHub release.
+# Started by hand from the Actions tab; nothing runs on push.
 name: Release
 
 on:
@@ -48,14 +48,6 @@ jobs:
 
       - name: Package rpm
         run: cargo generate-rpm -p crates/opentartarus-daemon -o target/packages/
-
-      - name: Package AppImage
-        run: |
-          curl -fsSL -o /tmp/appimagetool \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x /tmp/appimagetool
-          APPIMAGETOOL=/tmp/appimagetool APPIMAGE_EXTRACT_AND_RUN=1 sh packaging/appimage/build.sh
-          cp target/appimage/*.AppImage target/packages/
 
       - name: Inspect the packages
         run: |
