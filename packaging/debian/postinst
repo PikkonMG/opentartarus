@@ -1,0 +1,19 @@
+#!/bin/sh
+# Runs after the deb is unpacked. The udev rule hands the keypad and uinput
+# to the group "opentartarus", so that group must exist before the rule can
+# do anything. Adding the user to it is the app's job: "Fix permissions" in
+# the window does that through pkexec.
+set -e
+
+case "$1" in
+    configure)
+        getent group opentartarus >/dev/null || groupadd --system opentartarus
+        if command -v udevadm >/dev/null 2>&1; then
+            udevadm control --reload-rules || true
+            udevadm trigger --subsystem-match=input --subsystem-match=hidraw || true
+        fi
+        echo "OpenTartarus: open the app and press \"Fix permissions\" once, then unplug and replug the keypad."
+        ;;
+esac
+
+exit 0

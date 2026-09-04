@@ -28,13 +28,37 @@ The pad is drawn in the window. Click a key to change what it sends. A key can s
 
 To set a key, press "Record a key" and then press the key you want on your keyboard or on the pad. You can also type a combo into the box, or click one of the chips.
 
-Sixteen profiles ship with the app. Default is Razer's own layout: the left of a keyboard, with 1 to 5 on the top row, Tab Q W E R under that, Caps A S D F on the rest row, Shift Z X C at the bottom, Space on the thumb key and the arrow keys on the thumb pad. Any game's own key settings work with it as is.
+Twelve profiles ship with the app. Default is Razer's own layout: the left of a keyboard, with 1 to 5 on the top row, Tab Q W E R under that, Caps A S D F on the rest row, Shift Z X C at the bottom, Space on the thumb key and the arrow keys on the thumb pad. Any game's own key settings work with it as is.
 
-The other fifteen are built from each game's default PC bindings: Apex Legends, Counter-Strike 2, Diablo 4, Dota 2, Elden Ring, Elder Scrolls Online, Final Fantasy XIV, Fortnite, Guild Wars 2, League of Legends, Minecraft, Overwatch 2, Path of Exile, Valorant and World of Warcraft. Games that move with WASD put movement on the thumb pad and the most used actions on the rest row. Two profiles need a step inside the game first. Diablo 4 needs its Keyboard Movement preset switched on. Elden Ring uses the layout the game shipped with, and a save made after patch 1.12 has Jump and Dodge on different keys. The window shows that note when the profile is active and no key is selected.
+The other eleven are built from each game's default PC bindings: Counter-Strike 2, Diablo 4, Dota 2, Elden Ring, Elder Scrolls Online, Final Fantasy XIV, Guild Wars 2, Minecraft, Overwatch 2, Path of Exile and World of Warcraft. All of them run on Linux, natively or through Proton. Games that move with WASD put movement on the thumb pad and the most used actions on the rest row. Two profiles need a step inside the game first. Diablo 4 needs its Keyboard Movement preset switched on. Elden Ring uses the layout the game shipped with, and a save made after patch 1.12 has Jump and Dodge on different keys. The window shows that note when the profile is active and no key is selected.
 
 You can make your own profiles. "+ New profile" at the bottom of the list copies whatever is selected under a new name. Custom profiles get a delete button. Shipped profiles cannot be deleted, but any edit to one can be undone with "Revert to shipped".
 
 The first time you apply a shipped profile the app copies it into `~/.config/opentartarus/profiles/`. Edits go to that copy. The copy is never refreshed on its own, so if a later version of the app ships a better layout for a game, press "Revert to shipped" to pick it up.
+
+## Game rules
+
+OpenTartarus is an input remapper, the same kind of tool as keyd or input-remapper. It grabs the keypad and re-emits presses through a virtual keyboard and mouse named "OpenTartarus Keyboard" and "OpenTartarus Mouse". It never reads or touches a game process, and it never pretends to be a different device. Every shipped profile sends exactly one action for one press, and a test enforces that.
+
+That matters because most publishers allow rebinding but ban "one press, many actions". Blizzard applies a one action per keypress rule to World of Warcraft, Diablo IV and Overwatch 2, and counts software key repeat as a violation. Grinding Gear Games allows one server action per input in Path of Exile. ArenaNet's Guild Wars 2 policy is one key for one function. ZeniMax bans all macros in The Elder Scrolls Online. Valve bans hardware and software input automation on its Counter-Strike 2 servers, and FACEIT and ESEA have their own rules. Minecraft servers set their own rules; Hypixel bans auto-clickers at any speed.
+
+So the plain profiles are fine to use. Macros and hold to repeat are not, in most games, and the window says so in red the moment you turn one on. Read your game's rules before you use either in play. Turbo through this app is no different from turbo through Razer Synapse in the eyes of those rules.
+
+There are no profiles for games that do not run on Linux. Riot's Vanguard blocks League of Legends and Valorant, EA stopped Apex Legends on Linux in October 2024, and Epic has never enabled Fortnite's anti-cheat for Proton, so none of those ship.
+
+Nobody has documented a ban for using a uinput remapper on Linux. Nobody can promise one will never happen either. The app keeps its behaviour simple and visible so that, if a publisher ever looks, there is nothing hidden to find.
+
+## Install
+
+Packages are on the Releases page: https://github.com/PikkonMG/opentartarus/releases
+
+- Debian, Ubuntu, Mint, Pop!_OS: `sudo apt install ./opentartarus_*_amd64.deb`
+- Fedora, openSUSE, RHEL: `sudo dnf install ./opentartarus-*.x86_64.rpm`
+- Any distro: make the AppImage executable and run it.
+
+The deb and the rpm install the udev rule, the polkit policy and the permissions helper. After installing one, open the app and press "Fix permissions" once, then unplug and replug the keypad. The AppImage cannot install system files, so its users add the group and the udev rule by hand; the release notes give the four commands.
+
+A release is built by the GitHub workflow in `.github/workflows/release.yml`. It is started by hand from the Actions tab with the tag to publish, and it refuses a tag that does not match the version in `Cargo.toml`. It builds the deb with `cargo-deb`, the rpm with `cargo-generate-rpm` and the AppImage with `packaging/appimage/build.sh`, then creates the release with all three attached.
 
 ## How to build and run
 
@@ -99,7 +123,7 @@ The last line is optional. Most desktops pick the file up on the next login.
   - `opentartarus-daemon`: tray process, device grab, remap playback, lighting
   - `opentartarus-ui`: the iced window
   - `opentartarus-fix-permissions`: polkit helper that installs the udev rule
-- `packaging/`: udev rule, systemd user unit, polkit policy, desktop entry, login autostart, icons
+- `packaging/`: udev rule, systemd user unit, polkit policy, desktop entry, login autostart, icons, the deb postinst, the AppImage script and the release notes
 
 ## License
 

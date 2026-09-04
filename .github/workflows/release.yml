@@ -1,0 +1,73 @@
+# Builds the deb, the rpm and the AppImage, and publishes them as a GitHub
+# release. Started by hand from the Actions tab; nothing runs on push.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag. Must be v plus the version in Cargo.toml."
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # The oldest supported Ubuntu, so the binaries link against an old glibc
+    # and run on more distros.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches Cargo.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          if [ "${{ inputs.tag }}" != "v$version" ]; then
+            echo "tag ${{ inputs.tag }} does not match Cargo.toml version $version"
+            exit 1
+          fi
+
+      - name: Install tools
+        run: |
+          rustup update stable
+          rustup default stable
+          sudo apt-get update
+          sudo apt-get install -y rpm
+          cargo install cargo-deb cargo-generate-rpm
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build
+        run: cargo build --release --workspace
+
+      - name: Package deb
+        run: cargo deb -p opentartarus-daemon --no-build -o target/packages/
+
+      - name: Package rpm
+        run: cargo generate-rpm -p crates/opentartarus-daemon -o target/packages/
+
+      - name: Package AppImage
+        run: |
+          curl -fsSL -o /tmp/appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool
+          APPIMAGETOOL=/tmp/appimagetool APPIMAGE_EXTRACT_AND_RUN=1 sh packaging/appimage/build.sh
+          cp target/appimage/*.AppImage target/packages/
+
+      - name: Inspect the packages
+        run: |
+          ls -la target/packages
+          dpkg-deb -I target/packages/*.deb
+          dpkg-deb -c target/packages/*.deb
+          rpm -qlp target/packages/*.rpm
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ inputs.tag }}" target/packages/* \
+            --title "OpenTartarus ${{ inputs.tag }}" \
+            --notes-file packaging/release-notes.md

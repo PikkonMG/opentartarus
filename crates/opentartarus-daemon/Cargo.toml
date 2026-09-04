@@ -4,6 +4,9 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Razer Tartarus keypad profiles and remaps for Linux"
 
 [dependencies]
 opentartarus-core = { path = "../opentartarus-core" }
@@ -15,3 +18,59 @@ evdev = { version = "0.13", features = ["tokio"] }
 ksni = { version = "0.3", features = ["tokio"] }
 zbus = { version = "5", features = ["tokio"] }
 png = "0.17"
+
+# The daemon crate carries the package recipes because it is the process a
+# user must have. Both recipes expect `cargo build --release --workspace` to
+# have run first: they pack the three binaries plus the files in packaging/.
+[package.metadata.deb]
+name = "opentartarus"
+maintainer = "PikkonMG <pikkons@gmail.com>"
+section = "utils"
+priority = "optional"
+depends = "$auto, udev, policykit-1"
+extended-description = """Per-game profiles and key remaps for the Razer \
+Tartarus V2 and Tartarus Pro, with lighting through OpenRazer. A tray daemon \
+grabs the keypad and plays the remaps; a window edits the profiles."""
+maintainer-scripts = "../../packaging/debian"
+conf-files = ["/etc/xdg/autostart/opentartarus-daemon.desktop"]
+assets = [
+  ["target/release/opentartarus-daemon", "usr/bin/", "755"],
+  ["target/release/opentartarus-ui", "usr/bin/", "755"],
+  ["target/release/opentartarus-fix-permissions", "usr/libexec/", "755"],
+  ["../../packaging/udev/99-opentartarus.rules", "usr/lib/udev/rules.d/", "644"],
+  ["../../packaging/polkit/com.opentartarus.fix-permissions.policy", "usr/share/polkit-1/actions/", "644"],
+  ["../../packaging/desktop/opentartarus.desktop", "usr/share/applications/", "644"],
+  ["../../packaging/autostart/opentartarus-daemon.desktop", "etc/xdg/autostart/", "644"],
+  ["../../packaging/systemd/opentartarus-daemon.service", "usr/lib/systemd/user/", "644"],
+  ["../../packaging/icons/opentartarus.svg", "usr/share/icons/hicolor/scalable/apps/", "644"],
+  ["../../README.md", "usr/share/doc/opentartarus/", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "opentartarus"
+summary = "Razer Tartarus keypad profiles and remaps for Linux"
+license = "MIT"
+url = "https://github.com/PikkonMG/opentartarus"
+post_install_script = """
+getent group opentartarus >/dev/null || groupadd --system opentartarus
+if command -v udevadm >/dev/null 2>&1; then
+  udevadm control --reload-rules || true
+  udevadm trigger --subsystem-match=input --subsystem-match=hidraw || true
+fi
+"""
+assets = [
+  { source = "target/release/opentartarus-daemon", dest = "/usr/bin/opentartarus-daemon", mode = "755" },
+  { source = "target/release/opentartarus-ui", dest = "/usr/bin/opentartarus-ui", mode = "755" },
+  { source = "target/release/opentartarus-fix-permissions", dest = "/usr/libexec/opentartarus-fix-permissions", mode = "755" },
+  { source = "packaging/udev/99-opentartarus.rules", dest = "/usr/lib/udev/rules.d/99-opentartarus.rules", mode = "644" },
+  { source = "packaging/polkit/com.opentartarus.fix-permissions.policy", dest = "/usr/share/polkit-1/actions/com.opentartarus.fix-permissions.policy", mode = "644" },
+  { source = "packaging/desktop/opentartarus.desktop", dest = "/usr/share/applications/opentartarus.desktop", mode = "644" },
+  { source = "packaging/autostart/opentartarus-daemon.desktop", dest = "/etc/xdg/autostart/opentartarus-daemon.desktop", mode = "644", config = true },
+  { source = "packaging/systemd/opentartarus-daemon.service", dest = "/usr/lib/systemd/user/opentartarus-daemon.service", mode = "644" },
+  { source = "packaging/icons/opentartarus.svg", dest = "/usr/share/icons/hicolor/scalable/apps/opentartarus.svg", mode = "644" },
+  { source = "README.md", dest = "/usr/share/doc/opentartarus/README.md", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.requires]
+udev = "*"
+polkit = "*"
