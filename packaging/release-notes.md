@@ -1,15 +1,29 @@
-**This is a test release, not a finished product.** It works on the developer's machine with a Tartarus V2 on Wayland. It has not been tried on many distros or on a Tartarus Pro. Expect rough edges, and please report what breaks.
+OpenTartarus is a Linux app for the Razer Tartarus V2 and Tartarus Pro. It remaps the keypad with per-game profiles, the way Synapse does on Windows, and it drives the lighting through OpenRazer.
 
-Two packages. Pick the one for your distro.
+This is the first build, and it is a test build. It works here, on one machine, with a Tartarus V2 on Wayland. It has not run on a real Tartarus Pro, and it has not been through many distros. If something does not work, please say so, and say which pad and which distro you have. CONTRIBUTING.md lists the rest of what helps.
 
-**Debian, Ubuntu, Mint, Pop!_OS**
+## What it does
+
+- 12 profiles, each built from that game's real default key bindings
+- any key can send a key, a combo, a bare Shift or Ctrl, a mouse button, or a macro
+- a key can jump to another profile, or step to the next one
+- lighting through OpenRazer, falling back to OpenRGB
+- a tray icon, so the remaps keep running with the window closed
+
+## Install
+
+Debian, Ubuntu, Mint, Pop!_OS:
 
     sudo apt install ./opentartarus_*_amd64.deb
 
-**Fedora, openSUSE, RHEL**
+Fedora, openSUSE, RHEL:
 
     sudo dnf install ./opentartarus-*.x86_64.rpm
 
-After installing, open the app and press "Fix permissions" once. It adds you to the `opentartarus` group. Then unplug the keypad and plug it back in. If the app still cannot see the pad, sign out and back in.
+Then open the app, open the menu, and press "Fix permissions" once. That adds you to the `opentartarus` group, which is what lets the app open the keypad at all. Unplug the pad and plug it back in. If the app still cannot find it, sign out and back in.
 
-Lighting needs OpenRazer. Remaps work without it.
+Lighting needs the OpenRazer daemon running. The remaps do not.
+
+## One warning
+
+Every shipped profile sends one action for one press, which is what game publishers allow. Macros and hold-to-repeat are not, in most games, and several ban them outright. The window turns that warning red the moment you switch one on. The Game rules section of the README has the detail.
