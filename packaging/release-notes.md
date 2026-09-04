@@ -1,3 +1,5 @@
+**This is a test release, not a finished product.** It works on the developer's machine with a Tartarus V2 on Wayland. It has not been tried on many distros or on a Tartarus Pro. Expect rough edges, and please report what breaks.
+
 Two packages. Pick the one for your distro.
 
 **Debian, Ubuntu, Mint, Pop!_OS**

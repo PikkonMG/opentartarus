@@ -62,4 +62,5 @@ jobs:
         run: |
           gh release create "${{ inputs.tag }}" target/packages/* \
             --title "OpenTartarus ${{ inputs.tag }}" \
-            --notes-file packaging/release-notes.md
+            --notes-file packaging/release-notes.md \
+            --prerelease

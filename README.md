@@ -6,6 +6,8 @@ Two processes make up the app. A tray daemon grabs the keypad, plays the remaps,
 
 Source: https://github.com/PikkonMG/opentartarus
 
+**Status: testing.** Version 0.1.0 is an early build, marked as a pre-release on GitHub. It works on the developer's machine with a Tartarus V2. The Tartarus Pro path is built from Razer's specification and has not been tried on a real Pro. Bug reports are welcome; see CONTRIBUTING.md for what to include.
+
 ## What you need
 
 - Linux, on X11 or Wayland
