@@ -428,8 +428,9 @@ fn device_loop(
 
         if !gamepad_idx.is_empty() {
             let want = state.lock().expect("daemon state").engine.binds_stick();
-            if want != gamepad_held {
-                hold_gamepads(&mut grabbed, &gamepad_idx, want);
+            // A failed grab, say while a game holds the node, is tried
+            // again on the next pass.
+            if want != gamepad_held && hold_gamepads(&mut grabbed, &gamepad_idx, want) {
                 gamepad_held = want;
             }
         }
@@ -642,7 +643,11 @@ fn grab_nodes(nodes: &[PathBuf]) -> Result<Vec<evdev::Device>, GrabFail> {
 /// gives them back when it does not, so an unbound stick still works as a
 /// gamepad. The daemon keeps reading them either way; the remap engine drops
 /// stick input it has no binding for.
-fn hold_gamepads(devices: &mut [evdev::Device], indexes: &[usize], hold: bool) {
+///
+/// Returns whether every node is now as asked. evdev skips a node that is
+/// already as asked, so a retry only touches the nodes that failed.
+fn hold_gamepads(devices: &mut [evdev::Device], indexes: &[usize], hold: bool) -> bool {
+    let mut all_done = true;
     for &index in indexes {
         let Some(device) = devices.get_mut(index) else {
             continue;
@@ -650,8 +655,10 @@ fn hold_gamepads(devices: &mut [evdev::Device], indexes: &[usize], hold: bool) {
         let result = if hold { device.grab() } else { device.ungrab() };
         if let Err(err) = result {
             log::write(&ErrorCode::Io.log_line(Some(&err.to_string())));
+            all_done = false;
         }
     }
+    all_done
 }
 
 /// Lets go of the stick before the pad's engine is dropped, so an unplug
