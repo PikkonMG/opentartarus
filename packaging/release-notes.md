@@ -1,6 +1,6 @@
 OpenTartarus is a Linux app for the Razer Tartarus V2, Tartarus Pro and Tartarus V2 Pro. It remaps the keypad with per-game profiles, the way Synapse does on Windows, and it drives the lighting through OpenRazer.
 
-This is the first build, and it is a test build. It works with a Tartarus V2 and a Tartarus V2 Pro on Wayland. It has not run on a real Tartarus Pro, and it has not been through many distros. If something does not work, please say so, and say which pad and which distro you have. CONTRIBUTING.md lists the rest of what helps.
+This is a test build. It works with a Tartarus V2 and a Tartarus V2 Pro on Wayland. It has not run on a real Tartarus Pro, and it has not been through many distros. If something does not work, please say so, and say which pad and which distro you have. CONTRIBUTING.md lists the rest of what helps.
 
 ## What it does
 

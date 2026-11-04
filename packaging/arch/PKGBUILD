@@ -1,7 +1,7 @@
 # Arch Linux package for OpenTartarus, built from the checkout this file
 # sits in. From packaging/arch, run:  makepkg -si
 pkgname=opentartarus
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Razer Tartarus V2, Pro and V2 Pro keypad profiles and remaps for Linux"
 arch=('x86_64')
