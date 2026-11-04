@@ -82,15 +82,11 @@ pub struct DeviceUiState {
     pub grab_conflict: bool,
 }
 
-pub fn model_from_pid(pid: u16) -> Option<DeviceModel> {
-    DeviceModel::from_usb_pid(pid)
-}
-
 pub fn classify_input_id(vid: u16, pid: u16) -> Option<DeviceModel> {
     if !allow_grab(vid, pid) {
         return None;
     }
-    model_from_pid(pid)
+    DeviceModel::from_usb_pid(pid)
 }
 
 pub fn pick_first(found: Vec<Detected>) -> Option<Detected> {
