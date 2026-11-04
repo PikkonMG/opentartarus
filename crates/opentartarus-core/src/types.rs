@@ -136,7 +136,8 @@ pub enum KeyId {
 }
 
 impl KeyId {
-    /// Every physical key, in declaration order.
+    /// Every physical key: the V2 and Pro keys in declaration order, then the
+    /// V2 Pro's own keys.
     /// 20 grid keys + 3 wheel + mode + 8 thumb directions + 4 analog = 36,
     /// plus the V2 Pro's 7 extra keys and stick click = 44.
     /// Used by exhaustive tests and by the keypad widget's geometry check.
