@@ -212,6 +212,10 @@ impl RemapEngine {
         self.stick_mode
     }
 
+    pub fn stick_rotation_deg(&self) -> i32 {
+        self.stick_rotation_deg
+    }
+
     /// Whether the active profile takes the thumbstick over: it binds part
     /// of it to keys, or hands it to games through the virtual controller.
     /// While it does neither, the daemon leaves the V2 Pro's gamepad node to

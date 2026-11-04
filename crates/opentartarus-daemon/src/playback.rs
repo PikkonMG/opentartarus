@@ -131,9 +131,13 @@ pub fn tick_engine<L, C>(
     restore_engine_if_current(&mut st, engine, epoch_at_take, epoch);
 }
 
+/// The stand-in left in the state carries the stick rotation, because a
+/// request served while the engine is out may make the stand-in the engine.
 fn take_engine<L: LightingClient>(state: &mut DaemonState<L>) -> RemapEngine {
     let model = state.model.unwrap_or(DeviceModel::V2);
-    std::mem::replace(&mut state.engine, RemapEngine::new(model))
+    let mut stand_in = RemapEngine::new(model);
+    stand_in.set_stick_rotation(state.stick_rotation_deg);
+    std::mem::replace(&mut state.engine, stand_in)
 }
 
 fn restore_engine_if_current<L: LightingClient>(
@@ -143,6 +147,9 @@ fn restore_engine_if_current<L: LightingClient>(
     epoch: &EngineEpoch,
 ) {
     if epoch.load() == epoch_at_take {
+        // A rotation set while the engine was out landed on the stand-in.
+        let mut engine = engine;
+        engine.set_stick_rotation(state.stick_rotation_deg);
         state.engine = engine;
     }
 }
@@ -191,6 +198,25 @@ mod tests {
             grab_conflict: None,
             stick_rotation_deg: 0,
         }
+    }
+
+    #[test]
+    fn a_rotation_set_while_the_engine_is_out_survives_the_restore() {
+        let mut st = state();
+        let epoch = EngineEpoch::new();
+        let epoch_at_take = epoch.load();
+        st.stick_rotation_deg = 45;
+        let taken = take_engine(&mut st);
+        assert_eq!(st.engine.stick_rotation_deg(), 45, "the stand-in has it");
+        handle_request(
+            &mut st,
+            Method::SetStickRotation,
+            json!({"degrees": -90}),
+            0,
+        )
+        .unwrap();
+        restore_engine_if_current(&mut st, taken, epoch_at_take, &epoch);
+        assert_eq!(st.engine.stick_rotation_deg(), -90);
     }
 
     struct PanicOnSleep;
