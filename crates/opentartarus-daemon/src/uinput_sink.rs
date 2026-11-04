@@ -32,7 +32,15 @@ pub struct UinputSink {
     mouse: VirtualDevice,
     /// Made the first time a profile hands the stick to games, so a player
     /// who never does that never sees an extra controller in their games.
-    controller: Option<VirtualDevice>,
+    controller: Controller,
+}
+
+enum Controller {
+    NotBuilt,
+    Built(VirtualDevice),
+    /// The build failed once. It is not tried again, because the stick
+    /// sends hundreds of events a second and each try would log a line.
+    Failed,
 }
 
 impl UinputSink {
@@ -40,21 +48,24 @@ impl UinputSink {
         Ok(Self {
             keyboard: build_keyboard()?,
             mouse: build_mouse()?,
-            controller: None,
+            controller: Controller::NotBuilt,
         })
     }
 
     fn controller(&mut self) -> Option<&mut VirtualDevice> {
-        if self.controller.is_none() {
-            match build_controller() {
-                Ok(device) => self.controller = Some(device),
+        if matches!(self.controller, Controller::NotBuilt) {
+            self.controller = match build_controller() {
+                Ok(device) => Controller::Built(device),
                 Err(_) => {
                     crate::log::write(&ErrorCode::Permission.log_line(Some("virtual controller")));
-                    return None;
+                    Controller::Failed
                 }
-            }
+            };
         }
-        self.controller.as_mut()
+        match &mut self.controller {
+            Controller::Built(device) => Some(device),
+            Controller::NotBuilt | Controller::Failed => None,
+        }
     }
 }
 
