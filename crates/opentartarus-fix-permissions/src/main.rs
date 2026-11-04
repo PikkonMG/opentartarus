@@ -25,7 +25,7 @@ fn run() -> Result<(), HelperError> {
     let user = resolve_user_from_pkexec_uid()?;
     run_checked("groupadd", &["-f", GROUP_NAME], HelperError::GroupAdd)?;
     run_checked("usermod", &["-aG", GROUP_NAME, &user], HelperError::UserMod)?;
-    write_udev_rules_if_missing()?;
+    write_udev_rules_if_stale()?;
     run_checked(
         "udevadm",
         &["control", "--reload-rules"],
@@ -57,17 +57,24 @@ fn resolve_user_from_pkexec_uid() -> Result<String, HelperError> {
     Ok(name.to_string())
 }
 
-fn write_udev_rules_if_missing() -> Result<(), HelperError> {
+fn write_udev_rules_if_stale() -> Result<(), HelperError> {
     // Only this helper ever wrote the old file, so it is safe to remove.
     let legacy = Path::new(LEGACY_RULES_PATH);
     if legacy.exists() {
         fs::remove_file(legacy).map_err(|_| HelperError::WriteRules)?;
     }
     let path = Path::new(RULES_PATH);
-    if path.exists() {
+    if !rules_need_writing(fs::read_to_string(path).ok().as_deref()) {
         return Ok(());
     }
     fs::write(path, UDEV_RULES).map_err(|_| HelperError::WriteRules)
+}
+
+/// The copy in /etc has the packaged rule's name, so it masks that rule.
+/// It must match this build's rule, or a pad added in a later release would
+/// never get its permissions.
+fn rules_need_writing(existing: Option<&str>) -> bool {
+    existing != Some(UDEV_RULES)
 }
 
 fn run_checked(program: &str, args: &[&str], on_fail: HelperError) -> Result<(), HelperError> {
@@ -108,5 +115,17 @@ impl std::fmt::Display for HelperError {
             Self::UdevReload => write!(f, "udevadm reload-rules failed"),
             Self::UdevTrigger => write!(f, "udevadm trigger failed"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_missing_or_older_rule_copy_is_rewritten() {
+        assert!(rules_need_writing(None));
+        assert!(rules_need_writing(Some("SUBSYSTEM==\"input\"\n")));
+        assert!(!rules_need_writing(Some(UDEV_RULES)));
     }
 }
