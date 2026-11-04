@@ -16,6 +16,15 @@ use std::collections::BTreeMap;
 const KEY_DOWN: i32 = 1;
 const KEY_REPEAT: i32 = 2;
 const KEY_UP: i32 = 0;
+/// The stick's four directions, which the engine holds as state.
+const STICK_DIRECTIONS: [KeyId; 4] = [
+    KeyId::AnalogUp,
+    KeyId::AnalogDown,
+    KeyId::AnalogLeft,
+    KeyId::AnalogRight,
+];
+/// A deadline that is already due.
+const DUE_NOW_MS: u64 = 0;
 
 #[derive(Debug, Clone)]
 enum MacroOp {
@@ -81,6 +90,19 @@ pub struct RemapEngine {
     stick_rotation_deg: i32,
     /// The last position sent to the virtual controller in analog mode.
     pad_out: (i32, i32),
+    /// Releases owed for a stick let go with no physical event to carry
+    /// them: a profile or stick mode change, or an unplug. Sent first on the
+    /// next `handle` or `tick`, so they always come before new presses.
+    outbox: Vec<Emitted>,
+    /// The stick was let go for a change while it may still be pushed, so
+    /// its current position must be read again under the new profile.
+    stick_resettle: bool,
+}
+
+impl EventSink for Vec<Emitted> {
+    fn emit(&mut self, e: Emitted) {
+        self.push(e);
+    }
 }
 
 /// Turns a stick reading, `x` right and `y` down from -1 to 1, by `degrees`
@@ -124,12 +146,61 @@ impl RemapEngine {
             stick_mode: StickMode::default(),
             stick_rotation_deg: 0,
             pad_out: (0, 0),
+            outbox: Vec::new(),
+            stick_resettle: false,
         }
     }
 
+    /// Changing what the stick does while it is pushed would leave the old
+    /// keys held, or the virtual controller pushed, so the stick is let go
+    /// under the old profile first and read again under the new one.
     pub fn apply_profile(&mut self, p: &Profile) {
-        self.table = p.bindings_for_model(self.model);
+        let table = p.bindings_for_model(self.model);
+        let stick_changes = p.stick_mode != self.stick_mode
+            || STICK_DIRECTIONS
+                .iter()
+                .any(|id| self.table.get(id) != table.get(id));
+        if stick_changes {
+            self.release_stick();
+            self.stick_resettle = true;
+        }
+        self.table = table;
         self.stick_mode = p.stick_mode;
+    }
+
+    /// Lets go of every held stick direction and centres the virtual
+    /// controller. The releases go out on the next `handle` or `tick`.
+    pub fn release_stick(&mut self) {
+        let mut out = std::mem::take(&mut self.outbox);
+        for id in STICK_DIRECTIONS {
+            if !analog_pressed(self, id) {
+                continue;
+            }
+            set_analog_pressed(self, id, false);
+            if let Some(action) = self.table.get(&id).cloned() {
+                self.play_release(&action, &mut out);
+            }
+        }
+        self.emit_pad_stick(0.0, 0.0, &mut out);
+        self.outbox = out;
+    }
+
+    /// Sends the owed releases, then reads the stick again if a change let
+    /// it go.
+    fn settle(&mut self, sink: &mut impl EventSink, clock: &mut impl Clock) {
+        for e in self.outbox.drain(..) {
+            sink.emit(e);
+        }
+        if std::mem::take(&mut self.stick_resettle) {
+            let ev = RawEvent {
+                vid: USB_VID_RAZER,
+                pid: self.model.usb_pid(),
+                ev_type: EV_ABS,
+                code: ABS_X,
+                value: self.analog_x,
+            };
+            self.drive_stick(ev, sink, clock);
+        }
     }
 
     /// Turns every later stick reading by `degrees`, clockwise.
@@ -150,7 +221,11 @@ impl RemapEngine {
     }
 
     pub fn has_timed_work(&self) -> bool {
-        self.macro_play.is_some() || self.hold.is_some()
+        self.macro_play.is_some() || self.hold.is_some() || self.has_settle_work()
+    }
+
+    fn has_settle_work(&self) -> bool {
+        !self.outbox.is_empty() || self.stick_resettle
     }
 
     /// The profile change the last handled press asked for, if any. Taking
@@ -160,6 +235,9 @@ impl RemapEngine {
     }
 
     pub fn pending_deadline_ms(&self) -> Option<u64> {
+        if self.has_settle_work() {
+            return Some(DUE_NOW_MS);
+        }
         if let Some(play) = &self.macro_play {
             return Some(play.due_ms);
         }
@@ -170,6 +248,7 @@ impl RemapEngine {
     }
 
     pub fn tick(&mut self, sink: &mut impl EventSink, clock: &mut impl Clock) {
+        self.settle(sink, clock);
         self.tick_macro(sink, clock);
         self.tick_hold(sink, clock);
     }
@@ -230,6 +309,7 @@ impl RemapEngine {
         if !allow_grab(ev.vid, ev.pid) {
             return;
         }
+        self.settle(sink, clock);
         if self.model == DeviceModel::V2Pro && ev.ev_type == EV_ABS {
             self.handle_v2_pro_stick(ev, sink, clock);
             return;
@@ -309,6 +389,11 @@ impl RemapEngine {
         } else {
             self.analog_y = ev.value;
         }
+        self.drive_stick(ev, sink, clock);
+    }
+
+    /// Plays the stick's current position through the stick mode.
+    fn drive_stick(&mut self, ev: RawEvent, sink: &mut impl EventSink, clock: &mut impl Clock) {
         let (x, y) = rotate_stick(
             analog_axis_ratio_for(self.model, self.analog_x),
             analog_axis_ratio_for(self.model, self.analog_y),
@@ -1524,5 +1609,109 @@ mod tests {
         let tab = crate::keymap::token_to_evdev(KeyToken::Tab);
         e.handle(v2_pro_event(1, tab, 1), &mut s, &mut c);
         assert_eq!(s.0.last().map(|x| (x.code, x.value)), Some((tab, 1)));
+    }
+
+    fn deadlock_with_mode(mode: StickMode) -> Profile {
+        let mut p: Profile =
+            serde_json::from_str(crate::pack::shipped_json("deadlock").unwrap()).unwrap();
+        p.stick_mode = mode;
+        p
+    }
+
+    fn tick_once(e: &mut RemapEngine, s: &mut FakeSink) {
+        let mut c = FakeClock { t: 0 };
+        e.tick(s, &mut c);
+    }
+
+    fn last_axis(s: &FakeSink, code: u16) -> Option<i32> {
+        s.0.iter()
+            .rev()
+            .find(|ev| ev.ev_type == EV_ABS && ev.code == code)
+            .map(|ev| ev.value)
+    }
+
+    #[test]
+    fn a_held_stick_lets_go_of_its_keys_when_the_mode_turns_analog() {
+        let w = crate::keymap::token_to_evdev(KeyToken::W);
+        let mut e = deadlock_on_v2_pro(StickMode::Keys8, 0);
+        let mut s = FakeSink(vec![]);
+        push(&mut e, 0, -32768, &mut s);
+        assert_eq!(held_keys(&s), [w].into());
+
+        e.apply_profile(&deadlock_with_mode(StickMode::AnalogLeft));
+        assert!(e.has_timed_work(), "the release is owed");
+        assert_eq!(e.pending_deadline_ms(), Some(DUE_NOW_MS));
+        tick_once(&mut e, &mut s);
+        assert!(held_keys(&s).is_empty(), "W is let go");
+        assert_eq!(
+            last_axis(&s, ABS_Y),
+            Some(-GAMEPAD_AXIS_MAX),
+            "the stick still pushed is read again as the controller"
+        );
+        assert!(!e.has_timed_work());
+    }
+
+    #[test]
+    fn a_pushed_controller_is_centred_when_the_mode_turns_to_keys() {
+        let d = crate::keymap::token_to_evdev(KeyToken::D);
+        let mut e = deadlock_on_v2_pro(StickMode::AnalogLeft, 0);
+        let mut s = FakeSink(vec![]);
+        push(&mut e, 32767, 0, &mut s);
+        assert_eq!(last_axis(&s, ABS_X), Some(GAMEPAD_AXIS_MAX));
+
+        e.apply_profile(&deadlock_with_mode(StickMode::Keys8));
+        tick_once(&mut e, &mut s);
+        assert_eq!(last_axis(&s, ABS_X), Some(0), "the controller is centred");
+        assert_eq!(held_keys(&s), [d].into(), "the push now presses D");
+    }
+
+    #[test]
+    fn the_releases_go_out_before_the_next_stick_event() {
+        let w = crate::keymap::token_to_evdev(KeyToken::W);
+        let mut e = deadlock_on_v2_pro(StickMode::Keys8, 0);
+        let mut s = FakeSink(vec![]);
+        push(&mut e, 0, -32768, &mut s);
+        e.apply_profile(&deadlock_with_mode(StickMode::Keys4));
+        // A stick event arrives before any tick: the owed release of W
+        // comes first, then W is pressed again under 4-way.
+        push(&mut e, 0, -32768, &mut s);
+        let edges: Vec<(u16, i32)> = s.0.iter().map(|ev| (ev.code, ev.value)).collect();
+        assert_eq!(edges, vec![(w, 1), (w, 0), (w, 1)]);
+        assert_eq!(held_keys(&s), [w].into());
+    }
+
+    #[test]
+    fn an_edit_that_leaves_the_stick_alone_keeps_it_held() {
+        let w = crate::keymap::token_to_evdev(KeyToken::W);
+        let mut e = deadlock_on_v2_pro(StickMode::Keys8, 0);
+        let mut s = FakeSink(vec![]);
+        push(&mut e, 0, -32768, &mut s);
+        let mut p = deadlock_with_mode(StickMode::Keys8);
+        p.model_bindings
+            .get_mut(&DeviceModel::V2Pro)
+            .unwrap()
+            .remove(&KeyId::Kp01);
+        e.apply_profile(&p);
+        assert!(!e.has_timed_work());
+        tick_once(&mut e, &mut s);
+        assert_eq!(held_keys(&s), [w].into(), "no release, no blip");
+    }
+
+    #[test]
+    fn letting_go_of_the_stick_on_unplug_releases_without_pressing_again() {
+        let mut e = deadlock_on_v2_pro(StickMode::Keys8, 0);
+        let mut s = FakeSink(vec![]);
+        push(&mut e, 23000, -23000, &mut s);
+        assert_eq!(held_keys(&s).len(), 2);
+        e.release_stick();
+        tick_once(&mut e, &mut s);
+        assert!(held_keys(&s).is_empty());
+
+        let mut e = deadlock_on_v2_pro(StickMode::AnalogRight, 0);
+        let mut s = FakeSink(vec![]);
+        push(&mut e, 0, 32767, &mut s);
+        e.release_stick();
+        tick_once(&mut e, &mut s);
+        assert_eq!(last_axis(&s, ABS_RY), Some(0));
     }
 }

@@ -412,6 +412,7 @@ fn device_loop(
         }
 
         if !grabbed_nodes.iter().all(|path| path.exists()) {
+            release_stick(&state, &sink, &epoch);
             grabbed.clear();
             grabbed_ids = None;
             grabbed_nodes.clear();
@@ -450,6 +451,7 @@ fn device_loop(
             }
         }
         if disconnect {
+            release_stick(&state, &sink, &epoch);
             grabbed.clear();
             grabbed_ids = None;
             grabbed_nodes.clear();
@@ -650,6 +652,17 @@ fn hold_gamepads(devices: &mut [evdev::Device], indexes: &[usize], hold: bool) {
             log::write(&ErrorCode::Io.log_line(Some(&err.to_string())));
         }
     }
+}
+
+/// Lets go of the stick before the pad's engine is dropped, so an unplug
+/// leaves no key held and the virtual controller centred.
+fn release_stick(
+    state: &Mutex<DaemonState<DaemonLighting>>,
+    sink: &Mutex<Option<UinputSink>>,
+    epoch: &EngineEpoch,
+) {
+    state.lock().expect("daemon state").engine.release_stick();
+    tick_remap(state, sink, epoch);
 }
 
 fn open_and_grab(path: &PathBuf) -> std::io::Result<evdev::Device> {
