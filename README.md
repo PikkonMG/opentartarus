@@ -10,7 +10,7 @@ Two processes make up the app. A tray daemon grabs the keypad, plays the remaps,
 
 Source: https://github.com/PikkonMG/opentartarus
 
-**Status: testing.** Version 0.2.0 is an early build, marked as a pre-release on GitHub. It works on the developer's machine with a Tartarus V2. The Tartarus Pro path is built from Razer's specification and has not been tried on a real Pro. The Tartarus V2 Pro key map was recorded from a real V2 Pro, and its keys, stick and profiles were tried on one. Bug reports are welcome; see CONTRIBUTING.md for what to include.
+**Status: testing.** Version 0.2.0 is an early build, marked as a pre-release on GitHub. It works on the developer's machine with a Tartarus V2. The Tartarus Pro key map was recorded from a real Pro, and its keys, wheel, stick and mode button were checked on one. The Tartarus V2 Pro key map was recorded from a real V2 Pro, and its keys, stick and profiles were tried on one. Bug reports are welcome; see CONTRIBUTING.md for what to include.
 
 ## What you need
 
@@ -43,6 +43,14 @@ The Tartarus V2 Pro's face is shaped differently, so every profile has a second 
 You can make your own profiles. "+ New profile" at the bottom of the list copies whatever is selected under a new name. Custom profiles get a delete button. Shipped profiles cannot be deleted, but any edit to one can be undone with "Revert to shipped".
 
 The first time you apply a shipped profile the app copies it into `~/.config/opentartarus/profiles/`. Edits go to that copy. A copy you have never edited follows the app: when a new version ships a better layout for that game, your copy is replaced with it. The moment you change one key, the copy becomes yours and the app stops touching it. "Revert to shipped" throws your changes away and puts it back under the app's care.
+
+## Tartarus Pro
+
+The Pro has 20 keys in rows of 5, 5, 5 and 4, a thumb space key under them, a scroll wheel that clicks, and a stick that does not click. The window draws that layout and numbers the keys 01 to 20 along the rows.
+
+On its own the pad sends the left of a keyboard: 1 to 5 on the top row, Tab Q W E R under that, Caps A S D F on the rest row, Shift Z X C at the bottom, and Space on the thumb key. Each of those keys uses the same key slot as the V2 key in the same place, so a profile made on a V2 works on it unchanged. The wheel steps and its click, and the mode button next to the wheel, use their own slots too; with nothing bound, the mode button still sends the left Alt the pad sends.
+
+The stick shows up as the four arrow keys. OpenTartarus binds them as the stick's four directions, the same slots the V2's thumb pad and the V2 Pro's thumbstick use, so every shipped profile's movement bindings work on it as they are. A corner push holds two directions at once. The stick has no press of its own, and it has no analog depth to read, so the analog stick modes the V2 Pro offers are not offered for the Pro.
 
 ## Tartarus V2 Pro
 

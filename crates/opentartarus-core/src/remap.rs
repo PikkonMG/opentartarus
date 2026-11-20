@@ -518,9 +518,10 @@ impl RemapEngine {
     ) {
         match self.table.get(&key_id).cloned() {
             // The virtual devices have no axes and no gamepad buttons, so an
-            // unbound stick, hat or gamepad button has nothing to pass on.
-            // In analog mode an unbound stick click is the virtual
-            // controller's stick button, so games get the whole stick.
+            // unbound stick, hat, thumb direction or gamepad button has
+            // nothing to pass on. In analog mode an unbound stick click is
+            // the virtual controller's stick button, so games get the whole
+            // stick.
             None if key_id == KeyId::StickClick && self.stick_mode.is_analog() => {
                 let button = if self.stick_mode == StickMode::AnalogRight {
                     BTN_THUMBR
@@ -536,7 +537,7 @@ impl RemapEngine {
                     });
                 }
             }
-            None if ev.ev_type == EV_ABS || key_id.is_stick() => {}
+            None if ev.ev_type == EV_ABS || key_id.is_stick() || key_id.is_thumb() => {}
             None => {
                 sink.emit(Emitted {
                     keyboard: ev.ev_type == EV_KEY,
@@ -1063,9 +1064,88 @@ mod tests {
     }
 
     #[test]
+    fn pro_remaps_the_codes_a_real_pad_sends() {
+        let mut p = Profile {
+            id: "t".into(),
+            name: "t".into(),
+            game: crate::types::GameId::Default,
+            device_models: vec![DeviceModel::Pro],
+            bindings: BTreeMap::new(),
+            model_bindings: BTreeMap::new(),
+            stick_mode: StickMode::default(),
+            lighting: Lighting {
+                effect: LightingEffect::None,
+                brightness: 80,
+                color: None,
+            },
+            unknown_key_ids: false,
+            setup_note: None,
+            shipped_revision: None,
+        };
+        let key = |token: KeyToken| Action::Key {
+            key: token,
+            modifiers: vec![],
+        };
+        p.bindings.insert(KeyId::Kp07, key(KeyToken::D));
+        p.bindings.insert(KeyId::Kp20, key(KeyToken::S));
+        p.bindings.insert(KeyId::ThumbN, key(KeyToken::W));
+        let mut e = RemapEngine::new(DeviceModel::Pro);
+        e.apply_profile(&p);
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        let press = |code: u16, value: i32| RawEvent {
+            vid: USB_VID_RAZER,
+            pid: crate::constants::USB_PID_TARTARUS_PRO,
+            ev_type: 1,
+            code,
+            value,
+        };
+        let d = crate::keymap::token_to_evdev(KeyToken::D);
+        let w = crate::keymap::token_to_evdev(KeyToken::W);
+        let s_key = crate::keymap::token_to_evdev(KeyToken::S);
+
+        // Key 07 sends Q on a real Pro, and lands on kp07, not on kp11.
+        e.handle(press(16, 1), &mut s, &mut c);
+        e.handle(press(16, 0), &mut s, &mut c);
+        assert!(s
+            .0
+            .iter()
+            .any(|x| x.keyboard && x.code == d && x.value == 1));
+        assert!(s
+            .0
+            .iter()
+            .any(|x| x.keyboard && x.code == d && x.value == 0));
+
+        // The thumb space key.
+        e.handle(press(57, 1), &mut s, &mut c);
+        assert!(s
+            .0
+            .iter()
+            .any(|x| x.keyboard && x.code == s_key && x.value == 1));
+
+        // The stick: north fires its binding, and an east press with no
+        // binding is swallowed rather than leaking the arrow key.
+        e.handle(press(103, 1), &mut s, &mut c);
+        assert!(s
+            .0
+            .iter()
+            .any(|x| x.keyboard && x.code == w && x.value == 1));
+        s.0.clear();
+        e.handle(press(106, 1), &mut s, &mut c);
+        assert!(s.0.is_empty(), "an unbound stick direction leaks nothing");
+
+        // The mode button with no binding passes on what the pad sends.
+        s.0.clear();
+        e.handle(press(56, 1), &mut s, &mut c);
+        e.handle(press(56, 0), &mut s, &mut c);
+        assert!(s.0.iter().any(|x| x.code == 56 && x.value == 1));
+        assert!(s.0.iter().any(|x| x.code == 56 && x.value == 0));
+    }
+
+    #[test]
     fn analog_uses_press_and_release_ratios() {
         let mut e = profile_with(
-            DeviceModel::Pro,
+            DeviceModel::V2Pro,
             KeyId::AnalogRight,
             Action::Key {
                 key: KeyToken::D,
@@ -1077,17 +1157,20 @@ mod tests {
         let d = crate::keymap::token_to_evdev(KeyToken::D);
         let press = RawEvent {
             vid: USB_VID_RAZER,
-            pid: crate::constants::USB_PID_TARTARUS_PRO,
+            pid: crate::constants::USB_PID_TARTARUS_V2_PRO,
             ev_type: 3,
             code: 0,
-            value: 180,
+            // A gamepad axis: full right is 32767, so these are 43%, 31%
+            // and 27% of the travel, over and under the 40% press and 30%
+            // release points.
+            value: 14000,
         };
         e.handle(press, &mut s, &mut c);
         assert!(s.0.iter().any(|x| x.code == d && x.value == 1));
         s.0.clear();
         e.handle(
             RawEvent {
-                value: 168,
+                value: 10000,
                 ..press
             },
             &mut s,
@@ -1096,7 +1179,7 @@ mod tests {
         assert!(s.0.is_empty());
         e.handle(
             RawEvent {
-                value: 160,
+                value: 9000,
                 ..press
             },
             &mut s,

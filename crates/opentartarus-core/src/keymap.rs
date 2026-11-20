@@ -15,7 +15,9 @@ pub const ABS_RY: u16 = 4;
 pub const ABS_HAT0X: u16 = 16;
 pub const ABS_HAT0Y: u16 = 17;
 
-/// The Tartarus Pro's analog stick reports 0..=255 around 128.
+/// No shipped pad but the V2 Pro reports stick axes. The V2's thumb pad is
+/// an 8-way hat and the Pro's stick sends four plain key codes, so this
+/// only inits the engine's unused axis state on those pads.
 const ANALOG_AXIS_CENTER: i32 = 128;
 const ANALOG_AXIS_MAX: i32 = 255;
 /// The Tartarus V2 Pro's thumbstick is a gamepad (xpad) stick: -32768..=32767
@@ -78,8 +80,8 @@ const KEY_DOT: u16 = 52;
 const KEY_SLASH: u16 = 53;
 const KEY_RIGHTSHIFT: u16 = 54;
 const KEY_KPASTERISK: u16 = 55;
-const KEY_LEFTALT: u16 = 56;
 const KEY_SPACE: u16 = 57;
+const KEY_LEFTALT: u16 = 56;
 const KEY_CAPSLOCK: u16 = 58;
 const KEY_F1: u16 = 59;
 const KEY_F2: u16 = 60;
@@ -144,7 +146,7 @@ const WHEEL_UP: i32 = 1;
 const WHEEL_DOWN: i32 = -1;
 const KEY_PRESS_QUALIFIER: i32 = 1;
 
-/// Keypad plus wheel/mode fixture shared by production maps and tests.
+/// What the Tartarus V2 sends on its own, with no software running.
 /// Qualifier is applied in [`KeyMap`]: press `1` for keys, `+1`/`-1` for wheel.
 const V2_KEYS: &[(KeyId, u16, u16)] = &[
     (KeyId::Kp01, EV_KEY, KEY_1),
@@ -210,6 +212,44 @@ const V2_PRO_KEYS: &[(KeyId, u16, u16)] = &[
     (KeyId::StickClick, EV_KEY, BTN_THUMBR),
 ];
 
+/// What the Tartarus Pro sends on its own, with no software running:
+/// the left of a keyboard, one key wider than the V2 Pro's rows. Recorded
+/// from a real Pro (1532:0244): the 20 keys and the thumb space on the
+/// keyboard node, the wheel on the mouse node, and the stick's four
+/// directions and the mode button as arrow keys and left alt on the boot
+/// keyboard node. The stick holds two of the four codes at once on a
+/// diagonal, exactly like the V2's thumb pad does through the hat axes.
+const PRO_KEYS: &[(KeyId, u16, u16)] = &[
+    (KeyId::Kp01, EV_KEY, KEY_1),
+    (KeyId::Kp02, EV_KEY, KEY_2),
+    (KeyId::Kp03, EV_KEY, KEY_3),
+    (KeyId::Kp04, EV_KEY, KEY_4),
+    (KeyId::Kp05, EV_KEY, KEY_5),
+    (KeyId::Kp06, EV_KEY, KEY_TAB),
+    (KeyId::Kp07, EV_KEY, KEY_Q),
+    (KeyId::Kp08, EV_KEY, KEY_W),
+    (KeyId::Kp09, EV_KEY, KEY_E),
+    (KeyId::Kp10, EV_KEY, KEY_R),
+    (KeyId::Kp11, EV_KEY, KEY_CAPSLOCK),
+    (KeyId::Kp12, EV_KEY, KEY_A),
+    (KeyId::Kp13, EV_KEY, KEY_S),
+    (KeyId::Kp14, EV_KEY, KEY_D),
+    (KeyId::Kp15, EV_KEY, KEY_F),
+    (KeyId::Kp16, EV_KEY, KEY_LEFTSHIFT),
+    (KeyId::Kp17, EV_KEY, KEY_Z),
+    (KeyId::Kp18, EV_KEY, KEY_X),
+    (KeyId::Kp19, EV_KEY, KEY_C),
+    (KeyId::Kp20, EV_KEY, KEY_SPACE),
+    (KeyId::WheelUp, EV_REL, REL_WHEEL),
+    (KeyId::WheelDown, EV_REL, REL_WHEEL),
+    (KeyId::WheelClick, EV_KEY, BTN_MIDDLE),
+    (KeyId::Mode, EV_KEY, KEY_LEFTALT),
+    (KeyId::ThumbN, EV_KEY, KEY_UP),
+    (KeyId::ThumbE, EV_KEY, KEY_RIGHT),
+    (KeyId::ThumbS, EV_KEY, KEY_DOWN),
+    (KeyId::ThumbW, EV_KEY, KEY_LEFT),
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EvdevTuple {
     pub ev_type: u16,
@@ -228,7 +268,7 @@ impl KeyMap {
     }
 
     pub fn pro() -> Self {
-        Self::from_table(V2_KEYS)
+        Self::from_table(PRO_KEYS)
     }
 
     pub fn v2_pro() -> Self {
@@ -479,7 +519,9 @@ mod tests {
         }
         assert!(!v2.contains(KeyId::ThumbN));
         assert!(!v2.contains(KeyId::AnalogUp));
-        assert!(!pro.contains(KeyId::ThumbN));
+        // The Pro's stick is four plain directions; its diagonals never fire.
+        assert!(pro.contains(KeyId::ThumbN) && pro.contains(KeyId::ThumbW));
+        assert!(!pro.contains(KeyId::ThumbNe));
         assert!(!pro.contains(KeyId::AnalogUp));
     }
 
@@ -545,11 +587,69 @@ mod tests {
     }
 
     #[test]
+    fn pro_fixture_matches_what_the_pad_sends() {
+        let map = KeyMap::pro();
+        // Recorded from a real Tartarus Pro (1532:0244), row by row. The
+        // thumb space key sits below the rows on the physical pad.
+        let rows: [&[(u16, KeyId)]; 5] = [
+            &[
+                (KEY_1, KeyId::Kp01),
+                (KEY_2, KeyId::Kp02),
+                (KEY_3, KeyId::Kp03),
+                (KEY_4, KeyId::Kp04),
+                (KEY_5, KeyId::Kp05),
+            ],
+            &[
+                (KEY_TAB, KeyId::Kp06),
+                (KEY_Q, KeyId::Kp07),
+                (KEY_W, KeyId::Kp08),
+                (KEY_E, KeyId::Kp09),
+                (KEY_R, KeyId::Kp10),
+            ],
+            &[
+                (KEY_CAPSLOCK, KeyId::Kp11),
+                (KEY_A, KeyId::Kp12),
+                (KEY_S, KeyId::Kp13),
+                (KEY_D, KeyId::Kp14),
+                (KEY_F, KeyId::Kp15),
+            ],
+            &[
+                (KEY_LEFTSHIFT, KeyId::Kp16),
+                (KEY_Z, KeyId::Kp17),
+                (KEY_X, KeyId::Kp18),
+                (KEY_C, KeyId::Kp19),
+            ],
+            &[(KEY_SPACE, KeyId::Kp20)],
+        ];
+        for row in rows {
+            for (code, id) in row {
+                assert_eq!(map.get(EV_KEY, *code, 1), Some(*id), "code {code}");
+            }
+        }
+        // The wheel on the mouse node, the click with it.
+        assert_eq!(map.get(EV_REL, REL_WHEEL, 1), Some(KeyId::WheelUp));
+        assert_eq!(map.get(EV_REL, REL_WHEEL, -1), Some(KeyId::WheelDown));
+        assert_eq!(map.get(EV_KEY, BTN_MIDDLE, 1), Some(KeyId::WheelClick));
+        // The mode button and the stick on the boot keyboard node.
+        assert_eq!(map.get(EV_KEY, KEY_LEFTALT, 1), Some(KeyId::Mode));
+        assert_eq!(map.get(EV_KEY, KEY_UP, 1), Some(KeyId::ThumbN));
+        assert_eq!(map.get(EV_KEY, KEY_RIGHT, 1), Some(KeyId::ThumbE));
+        assert_eq!(map.get(EV_KEY, KEY_DOWN, 1), Some(KeyId::ThumbS));
+        assert_eq!(map.get(EV_KEY, KEY_LEFT, 1), Some(KeyId::ThumbW));
+        for id in KeyId::ALL {
+            assert_eq!(
+                map.contains(id),
+                DeviceModel::Pro.has_key(id),
+                "Pro map and has_key disagree on {id:?}"
+            );
+        }
+    }
+
+    #[test]
     fn gamepad_stick_ratio_is_centred_on_zero() {
         assert_eq!(analog_axis_ratio_for(DeviceModel::V2Pro, 0), 0.0);
         assert!((analog_axis_ratio_for(DeviceModel::V2Pro, 32767) - 1.0).abs() < 1e-6);
         assert!(analog_axis_ratio_for(DeviceModel::V2Pro, -32768) <= -1.0);
-        assert!((analog_axis_ratio_for(DeviceModel::Pro, 255) - 1.0).abs() < 1e-6);
     }
 
     fn keypad_and_wheel_mode() -> [KeyId; 24] {

@@ -334,12 +334,13 @@ const THUMB_PAD_CELLS: [(KeyId, usize, usize); 8] = [
     (KeyId::ThumbSe, 2, 2),
 ];
 
-/// The Pro's analog stick uses the four edge cells of the same 3x3 grid.
-const ANALOG_PAD_CELLS: [(KeyId, usize, usize); 4] = [
-    (KeyId::AnalogUp, 1, 0),
-    (KeyId::AnalogLeft, 0, 1),
-    (KeyId::AnalogRight, 2, 1),
-    (KeyId::AnalogDown, 1, 2),
+/// The Pro's stick sends the four cardinal directions and no diagonals, so
+/// it uses the four edge cells of the same 3x3 grid.
+const PRO_STICK_CELLS: [(KeyId, usize, usize); 4] = [
+    (KeyId::ThumbN, 1, 0),
+    (KeyId::ThumbW, 0, 1),
+    (KeyId::ThumbE, 2, 1),
+    (KeyId::ThumbS, 1, 2),
 ];
 
 /// Uniform scale and offset that centre the natural-size cluster in `size`.
@@ -484,7 +485,7 @@ fn key_rects(size: Size, model: Option<DeviceModel>) -> Vec<(KeyId, Rectangle)> 
 
     let pad_left = row_left + THUMB_KEY_WIDTH + THUMB_CLUSTER_GAP;
     let cells: &[(KeyId, usize, usize)] = match model {
-        Some(DeviceModel::Pro) => &ANALOG_PAD_CELLS,
+        Some(DeviceModel::Pro) => &PRO_STICK_CELLS,
         _ => &THUMB_PAD_CELLS,
     };
     for (id, column, row) in cells {
@@ -573,28 +574,30 @@ mod tests {
     }
 
     #[test]
-    fn pro_swaps_the_thumb_pad_for_the_analog_stick() {
+    fn pro_swaps_the_thumb_pad_for_the_sticks_four_directions() {
         let got = ids(BIG, Some(DeviceModel::Pro));
-        assert_eq!(got.len(), 28, "20 grid + 4 wheel column + 4 analog");
-        for id in [
-            KeyId::AnalogUp,
-            KeyId::AnalogDown,
-            KeyId::AnalogLeft,
-            KeyId::AnalogRight,
-        ] {
+        assert_eq!(got.len(), 28, "20 grid + 4 wheel column + 4 stick cells");
+        for id in [KeyId::ThumbN, KeyId::ThumbE, KeyId::ThumbS, KeyId::ThumbW] {
             assert!(got.contains(&id), "missing {id:?}");
         }
         assert!(!got.iter().any(|id| matches!(
             id,
-            KeyId::ThumbN
-                | KeyId::ThumbNe
-                | KeyId::ThumbE
+            KeyId::ThumbNe
                 | KeyId::ThumbSe
-                | KeyId::ThumbS
                 | KeyId::ThumbSw
-                | KeyId::ThumbW
                 | KeyId::ThumbNw
+                | KeyId::AnalogUp
+                | KeyId::AnalogDown
+                | KeyId::AnalogLeft
+                | KeyId::AnalogRight
         )));
+        for id in KeyId::ALL {
+            assert_eq!(
+                got.contains(&id),
+                DeviceModel::Pro.has_key(id),
+                "drawn keys and has_key disagree on {id:?}"
+            );
+        }
     }
 
     #[test]

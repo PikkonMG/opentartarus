@@ -31,7 +31,12 @@ impl DeviceModel {
     pub fn has_key(self, key: KeyId) -> bool {
         match self {
             Self::V2 => !key.is_analog() && !key.is_v2_pro_only(),
-            Self::Pro => !key.is_thumb() && !key.is_v2_pro_only(),
+            // The Pro's stick sends four plain directions and no diagonals.
+            Self::Pro => {
+                !key.is_analog()
+                    && !key.is_v2_pro_only()
+                    && (!key.is_thumb() || key.is_pro_stick_direction())
+            }
             Self::V2Pro => {
                 !key.is_thumb()
                     && !matches!(
@@ -212,6 +217,15 @@ impl KeyId {
         matches!(
             self,
             Self::AnalogUp | Self::AnalogDown | Self::AnalogLeft | Self::AnalogRight
+        )
+    }
+
+    /// The four directions the Tartarus Pro's stick sends on its own. The
+    /// diagonals never fire on it: a corner push holds two of these.
+    pub fn is_pro_stick_direction(self) -> bool {
+        matches!(
+            self,
+            Self::ThumbN | Self::ThumbE | Self::ThumbS | Self::ThumbW
         )
     }
 
