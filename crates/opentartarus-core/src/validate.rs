@@ -516,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn v2_drops_analog_keeps_thumb_pro_drops_thumb_keeps_analog() {
+    fn v2_drops_analog_keeps_thumb_pro_keeps_the_sticks_four_directions() {
         let mut p: Profile = serde_json::from_str(lol_json()).unwrap();
         p.bindings.insert(
             KeyId::AnalogUp,
@@ -532,12 +532,21 @@ mod tests {
                 modifiers: vec![],
             },
         );
+        p.bindings.insert(
+            KeyId::ThumbNe,
+            Action::Key {
+                key: crate::types::KeyToken::W,
+                modifiers: vec![],
+            },
+        );
         let v2 = p.bindings_for_model(DeviceModel::V2);
         assert!(v2.contains_key(&KeyId::ThumbN));
+        assert!(v2.contains_key(&KeyId::ThumbNe));
         assert!(!v2.contains_key(&KeyId::AnalogUp));
         let pro = p.bindings_for_model(DeviceModel::Pro);
-        assert!(pro.contains_key(&KeyId::AnalogUp));
-        assert!(!pro.contains_key(&KeyId::ThumbN));
+        assert!(pro.contains_key(&KeyId::ThumbN));
+        assert!(!pro.contains_key(&KeyId::ThumbNe), "no diagonals");
+        assert!(!pro.contains_key(&KeyId::AnalogUp));
     }
 
     #[test]

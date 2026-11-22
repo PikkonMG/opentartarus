@@ -156,6 +156,11 @@ pub fn key_display_name_for(model: Option<DeviceModel>, id: KeyId) -> String {
             return String::from(name);
         }
     }
+    if model == Some(DeviceModel::Pro) {
+        if let Some(name) = pro_stick_name(id) {
+            return String::from(name);
+        }
+    }
     key_display_name(id)
 }
 
@@ -169,6 +174,9 @@ pub fn key_position_text_for(model: Option<DeviceModel>, id: KeyId) -> String {
             return String::from(POSITION_THUMBSTICK);
         }
     }
+    if model == Some(DeviceModel::Pro) && id.is_pro_stick_direction() {
+        return String::from(POSITION_THUMBSTICK);
+    }
     key_position_text(id)
 }
 
@@ -179,6 +187,16 @@ fn v2_pro_stick_name(id: KeyId) -> Option<&'static str> {
         KeyId::AnalogLeft => Some("Stick left"),
         KeyId::AnalogRight => Some("Stick right"),
         KeyId::StickClick => Some("Stick click"),
+        _ => None,
+    }
+}
+
+fn pro_stick_name(id: KeyId) -> Option<&'static str> {
+    match id {
+        KeyId::ThumbN => Some("Stick up"),
+        KeyId::ThumbS => Some("Stick down"),
+        KeyId::ThumbW => Some("Stick left"),
+        KeyId::ThumbE => Some("Stick right"),
         _ => None,
     }
 }

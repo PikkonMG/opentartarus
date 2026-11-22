@@ -422,16 +422,16 @@ fn detected_from_entries(
     }
 }
 
-/// Which nodes carry the presses the daemon remaps. The V2 and Pro send
-/// their keys on the extra-keys node, and OpenRazer holds the boot keyboard.
-/// The V2 Pro sends its keys on the boot keyboard and its stick on a gamepad
-/// node, so it needs every node.
+/// Which nodes carry the presses the daemon remaps. The V2 sends its keys
+/// on the extra-keys node, and OpenRazer holds the boot keyboard. The Pro
+/// sends its keys on the extra-keys node and its wheel on the mouse node,
+/// but its stick and mode button on the boot keyboard, so it needs every
+/// node. The V2 Pro sends its keys on the boot keyboard and its stick on a
+/// gamepad node, so it needs every node too.
 fn is_remap_node(model: DeviceModel, role: NodeRole) -> bool {
     match model {
-        DeviceModel::V2Pro => true,
-        DeviceModel::V2 | DeviceModel::Pro => {
-            matches!(role, NodeRole::ExtraKeys | NodeRole::Mouse)
-        }
+        DeviceModel::V2Pro | DeviceModel::Pro => true,
+        DeviceModel::V2 => matches!(role, NodeRole::ExtraKeys | NodeRole::Mouse),
     }
 }
 
@@ -658,6 +658,54 @@ B: LED=7
             found[0].gamepad_nodes,
             vec![PathBuf::from("/dev/input/event6")]
         );
+    }
+
+    /// Trimmed from a real Tartarus Pro's /proc/bus/input/devices.
+    const PROC_TARTARUS_PRO: &str = "\
+I: Bus=0003 Vendor=1532 Product=0244 Version=0111
+N: Name=\"Razer Razer Tartarus Pro\"
+H: Handlers=sysrq kbd leds event27
+B: EV=120013
+B: KEY=1000000000007 ff9f207ac14057ff febeffdfffefffff fffffffffffffffe
+B: MSC=10
+
+I: Bus=0003 Vendor=1532 Product=0244 Version=0111
+N: Name=\"Razer Razer Tartarus Pro Keyboard\"
+H: Handlers=sysrq kbd event28
+B: EV=10001f
+B: KEY=733eff 0 0 483ffff17aff32d bfd4444600000000 1 130c730b17c007 ffbf7bfad941dfff febeffdfffefffff fffffffffffffffe
+B: REL=1040
+
+I: Bus=0003 Vendor=1532 Product=0244 Version=0111
+N: Name=\"Razer Razer Tartarus Pro\"
+H: Handlers=event29
+B: EV=9
+B: ABS=10000000000
+
+I: Bus=0003 Vendor=1532 Product=0244 Version=0111
+N: Name=\"Razer Razer Tartarus Pro\"
+H: Handlers=event30 mouse9
+B: EV=17
+B: KEY=1f0000 0 0 0 0
+B: REL=903
+";
+
+    #[test]
+    fn pro_grabs_every_node_including_its_boot_keyboard() {
+        use opentartarus_core::constants::USB_PID_TARTARUS_PRO;
+        let found = parse_proc_input_devices(PROC_TARTARUS_PRO);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].model, DeviceModel::Pro);
+        assert_eq!(found[0].pid, USB_PID_TARTARUS_PRO);
+        let all: Vec<PathBuf> = ["event27", "event28", "event29", "event30"]
+            .iter()
+            .map(|name| PathBuf::from("/dev/input").join(name))
+            .collect();
+        assert_eq!(found[0].nodes, all);
+        // event28 carries the 20 keys, event30 the wheel, and event27, the
+        // boot keyboard, the stick's four directions and the mode button.
+        assert_eq!(grab_targets(&found[0]), all.as_slice());
+        assert!(found[0].gamepad_nodes.is_empty());
     }
 
     #[test]
