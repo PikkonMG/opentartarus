@@ -70,6 +70,16 @@ pub fn is_new_profile_id(id: Option<&Id>) -> bool {
     id == Some(&new_profile_widget_id())
 }
 
+pub const RENAME_PROFILE_INPUT_ID: &str = "rename-profile-name";
+
+pub fn rename_profile_widget_id() -> Id {
+    Id::new(RENAME_PROFILE_INPUT_ID)
+}
+
+pub fn is_rename_profile_id(id: Option<&Id>) -> bool {
+    id == Some(&rename_profile_widget_id())
+}
+
 pub fn focused_widget_id() -> impl Operation<Option<Id>> {
     struct FocusedId {
         focused: Option<Id>,

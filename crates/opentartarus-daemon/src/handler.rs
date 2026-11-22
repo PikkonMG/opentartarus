@@ -57,6 +57,7 @@ pub fn handle_request<L: LightingClient>(
         Method::RevertProfile => revert_profile(state, &params),
         Method::CreateProfile => create_profile(state, &params),
         Method::DeleteProfile => delete_profile(state, &params),
+        Method::RenameProfile => rename_profile(state, &params),
         Method::ShowWindow => Ok(json!({})),
         Method::QuitDaemon => Ok(json!({ "stopping": true })),
         Method::SetStickMode => set_stick_mode(state, &params),
@@ -449,6 +450,24 @@ fn create_profile<L: LightingClient>(
     activate(state, &id)
 }
 
+/// Gives a profile a name of the user's own. Shipped profiles are allowed:
+/// a shipped name lives in the user's copy of it, so renaming one copies it
+/// first and counts as an edit, which means the copy stops following the
+/// pack and "Revert to shipped" puts the old name back with the rest of it.
+/// The id never changes, so the active profile and every saved binding stay
+/// where they are.
+fn rename_profile<L: LightingClient>(
+    state: &mut DaemonState<L>,
+    params: &Value,
+) -> Result<Value, ErrorCode> {
+    let id = require_string(params, "id")?;
+    let name = require_string(params, "name")?;
+    let mut profile = load_user_copy(state, &id)?;
+    profile.name = name.trim().to_owned();
+    persist_profile(state, &mut profile, false)?;
+    Ok(json!({ "id": id, "name": profile.name }))
+}
+
 /// Deletes a custom profile. Shipped profiles are refused: they can be
 /// reverted, never removed. Deleting the active profile falls back to the
 /// shipped default so the pad is never left with nothing applied.
@@ -638,6 +657,85 @@ mod tests {
             .iter()
             .map(|r| r["id"].as_str().unwrap().to_owned())
             .collect()
+    }
+
+    fn rename(
+        st: &mut DaemonState<RecordingLighting>,
+        id: &str,
+        name: &str,
+    ) -> Result<Value, ErrorCode> {
+        handle_request(
+            st,
+            Method::RenameProfile,
+            json!({ "id": id, "name": name }),
+            0,
+        )
+    }
+
+    fn row_names(st: &mut DaemonState<RecordingLighting>) -> Vec<String> {
+        let v = handle_request(st, Method::ListProfiles, json!({}), 0).unwrap();
+        v["profiles"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["name"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    /// What issue #4 asked for: a shipped profile can be given a name of the
+    /// user's own, and keeps its id so nothing else moves.
+    #[test]
+    fn rename_gives_a_shipped_profile_the_users_own_name_and_keeps_its_id() {
+        let mut st = state();
+        let out = rename(&mut st, "dota-2", "  Dota, my way  ").unwrap();
+        assert_eq!(out["id"], "dota-2", "the id never changes");
+        assert_eq!(out["name"], "Dota, my way", "the name is trimmed");
+
+        let saved = read_user_profile(&st.paths, "dota-2").unwrap();
+        assert_eq!(saved.name, "Dota, my way");
+        assert_eq!(saved.id, "dota-2");
+        assert!(
+            saved.shipped_revision.is_none(),
+            "a rename is an edit, so the copy stops following the pack"
+        );
+        assert!(row_names(&mut st).contains(&String::from("Dota, my way")));
+        assert_eq!(row_ids(&mut st).len(), SHIPPED_IDS.len());
+    }
+
+    #[test]
+    fn revert_puts_a_renamed_shipped_profile_back() {
+        let mut st = state();
+        rename(&mut st, "dota-2", "Dota, my way").unwrap();
+        handle_request(&mut st, Method::RevertProfile, json!({ "id": "dota-2" }), 0).unwrap();
+        let back = read_user_profile(&st.paths, "dota-2").unwrap();
+        assert_eq!(back.name, shipped_profile("dota-2").unwrap().name);
+    }
+
+    #[test]
+    fn rename_works_on_a_custom_profile_and_leaves_its_bindings_alone() {
+        let mut st = state();
+        let id = create(&mut st, "My Raid Layout");
+        let before = read_user_profile(&st.paths, &id).unwrap();
+        rename(&mut st, &id, "Raid Night").unwrap();
+        let after = read_user_profile(&st.paths, &id).unwrap();
+        assert_eq!(after.name, "Raid Night");
+        assert_eq!(after.bindings, before.bindings);
+        assert_eq!(st.active_id.as_deref(), Some(id.as_str()));
+    }
+
+    #[test]
+    fn rename_refuses_a_blank_name_and_an_unknown_profile() {
+        let mut st = state();
+        assert_eq!(
+            rename(&mut st, "dota-2", "   ").unwrap_err(),
+            ErrorCode::InvalidProfile
+        );
+        assert_eq!(
+            rename(&mut st, "no-such-profile", "Fine").unwrap_err(),
+            ErrorCode::NotFound
+        );
+        let untouched = shipped_profile("dota-2").unwrap();
+        assert_eq!(untouched.name, "Dota 2");
     }
 
     #[test]

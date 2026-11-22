@@ -11,8 +11,9 @@ use opentartarus_core::lighting::LightingClient;
 use serde_json::{json, Value};
 use std::fs;
 use std::io::{self, ErrorKind};
-use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
+use std::os::fd::AsRawFd;
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,16 +24,81 @@ use tokio::sync::broadcast;
 
 const SOCKET_DIR_MODE: u32 = 0o700;
 const READ_CHUNK: usize = 4096;
+/// The file beside the socket that carries the single-instance lock.
+const LOCK_FILE_NAME: &str = "daemon.lock";
+const LOCK_FILE_MODE: u32 = 0o600;
+const FLOCK_OK: i32 = 0;
 
-pub fn bind_exclusive(socket: &Path) -> io::Result<UnixListener> {
+/// Where the single-instance lock file sits: beside the socket, in the same
+/// runtime directory.
+pub fn lock_path(socket: &Path) -> PathBuf {
+    socket.with_file_name(LOCK_FILE_NAME)
+}
+
+/// An exclusive lock on the daemon's lock file, held for the life of the
+/// process. The lock belongs to the open file, so dropping this releases it,
+/// and so does the process exiting for any reason.
+///
+/// Two daemons starting in the same moment used to both find the socket dead,
+/// both unlink it and both bind one of their own, which left the user with
+/// two daemons and two tray icons. The lock is taken before the socket is
+/// touched at all, so only one of them ever reaches that code.
+#[derive(Debug)]
+pub struct InstanceLock {
+    file: fs::File,
+}
+
+impl InstanceLock {
+    /// Takes the lock, or reports `AddrInUse` when another daemon holds it.
+    pub fn take(path: &Path) -> io::Result<Self> {
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .mode(LOCK_FILE_MODE)
+            .open(path)?;
+        // SAFETY: the descriptor comes from the file opened just above and
+        // stays open for as long as this struct lives.
+        let taken = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+        if taken == FLOCK_OK {
+            return Ok(Self { file });
+        }
+        let err = io::Error::last_os_error();
+        if err.raw_os_error() == Some(libc::EWOULDBLOCK) {
+            return Err(io::Error::new(
+                ErrorKind::AddrInUse,
+                ErrorCode::AlreadyRunning.wire_name(),
+            ));
+        }
+        Err(err)
+    }
+}
+
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        // SAFETY: the descriptor is still open until this struct is gone.
+        let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
+    }
+}
+
+/// Takes the single-instance lock, then binds the socket. The caller must
+/// keep the lock for as long as the daemon runs.
+pub fn bind_exclusive(socket: &Path) -> io::Result<(UnixListener, InstanceLock)> {
     if let Some(parent) = socket.parent() {
         fs::create_dir_all(parent)?;
         fs::set_permissions(parent, fs::Permissions::from_mode(SOCKET_DIR_MODE))?;
     }
+    let lock = InstanceLock::take(&lock_path(socket))?;
+    // The lock makes this the only daemon of this version here. One from an
+    // older version took no lock, so a live socket still has to be found.
     if socket.exists() {
         match std::os::unix::net::UnixStream::connect(socket) {
             Ok(_) => {
-                return Err(io::Error::new(ErrorKind::AddrInUse, "already_running"));
+                return Err(io::Error::new(
+                    ErrorKind::AddrInUse,
+                    ErrorCode::AlreadyRunning.wire_name(),
+                ));
             }
             Err(err) if err.kind() == ErrorKind::PermissionDenied => return Err(err),
             Err(_) => {
@@ -40,7 +106,7 @@ pub fn bind_exclusive(socket: &Path) -> io::Result<UnixListener> {
             }
         }
     }
-    UnixListener::bind(socket)
+    Ok((UnixListener::bind(socket)?, lock))
 }
 
 pub fn listen_error_code(err: &io::Error) -> ErrorCode {
@@ -207,15 +273,36 @@ fn after_request<L: LightingClient>(
             );
         }
         Some(
-            Method::SetBinding
-            | Method::ClearBinding
-            | Method::SetLighting
-            | Method::RevertProfile
-            | Method::SetStickMode,
+            Method::SetBinding | Method::ClearBinding | Method::SetLighting | Method::SetStickMode,
         ) if ok => {
             if let Some(id) = value.pointer("/result/id").and_then(Value::as_str) {
                 emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
             }
+        }
+        // Reverting changes the bindings of the profile it names, and it can
+        // put a shipped name back, so it is both kinds of change at once.
+        Some(Method::RevertProfile) if ok => {
+            if let Some(id) = value.pointer("/result/id").and_then(Value::as_str) {
+                emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
+            }
+            emit_event(events, EventMethod::ProfilesChanged, json!({}));
+        }
+        // Creating activates the new profile. Deleting falls back to another
+        // one, which the result names as the active id, not as `id`.
+        Some(Method::CreateProfile | Method::DeleteProfile) if ok => {
+            let pointer = match method {
+                Some(Method::DeleteProfile) => "/result/active_id",
+                _ => "/result/id",
+            };
+            if let Some(id) = value.pointer(pointer).and_then(Value::as_str) {
+                emit_event(events, EventMethod::ProfileApplied, json!({ "id": id }));
+            }
+            emit_event(events, EventMethod::ProfilesChanged, json!({}));
+        }
+        // A rename leaves every binding and the active profile alone. Only
+        // the lists of names have to be read again.
+        Some(Method::RenameProfile) if ok => {
+            emit_event(events, EventMethod::ProfilesChanged, json!({}));
         }
         _ => {}
     }
@@ -411,10 +498,47 @@ mod tests {
         let stale = std::os::unix::net::UnixListener::bind(&socket).unwrap();
         drop(stale);
         assert!(socket.exists());
-        let listener = bind_exclusive(&socket).expect("dead leftover socket must be replaced");
-        drop(listener);
+        let held = bind_exclusive(&socket).expect("dead leftover socket must be replaced");
+        drop(held);
         let _ = std::fs::remove_file(&socket);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The bug behind issue #4: both daemons saw a dead socket, both unlinked
+    /// it, and both bound one. The lock has to stop the second one before it
+    /// can touch the socket at all.
+    #[tokio::test]
+    async fn the_lock_stops_a_second_daemon_with_a_dead_socket_in_place() {
+        let n = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("opentartarus-lock-{n}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("daemon.sock");
+
+        let stale = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        drop(stale);
+        let first = bind_exclusive(&socket).expect("the first daemon wins");
+        let err = bind_exclusive(&socket).expect_err("the second must be turned away");
+        assert_eq!(listen_error_code(&err), ErrorCode::AlreadyRunning);
+
+        // The lock goes with the daemon that held it, so the next start works.
+        drop(first);
+        let after = bind_exclusive(&socket).expect("the lock is free again");
+        drop(after);
+        let _ = std::fs::remove_file(&socket);
+        let _ = std::fs::remove_file(lock_path(&socket));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_lock_file_sits_beside_the_socket() {
+        let socket = std::path::Path::new("/run/user/1000/opentartarus/daemon.sock");
+        assert_eq!(
+            lock_path(socket),
+            std::path::Path::new("/run/user/1000/opentartarus/daemon.lock")
+        );
     }
 
     #[tokio::test]
@@ -428,6 +552,7 @@ mod tests {
         let socket = dir.join("daemon.sock");
         let live = bind_exclusive(&socket).unwrap();
         let err = bind_exclusive(&socket).expect_err("live listener must win");
+        let _ = std::fs::remove_file(lock_path(&socket));
         assert_eq!(err.kind(), ErrorKind::AddrInUse);
         assert_eq!(listen_error_code(&err), ErrorCode::AlreadyRunning);
         assert_ne!(listen_error_code(&err), ErrorCode::GrabConflict);

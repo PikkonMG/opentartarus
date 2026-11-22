@@ -62,6 +62,8 @@ pub enum Method {
     RevertProfile,
     CreateProfile,
     DeleteProfile,
+    /// Gives a profile, shipped or custom, a name of the user's own.
+    RenameProfile,
     ShowWindow,
     QuitDaemon,
     /// Sets what the thumbstick does with one profile.
@@ -80,6 +82,9 @@ pub enum EventMethod {
     ProfileApplied,
     FocusWindow,
     DaemonStopping,
+    /// The set of profiles or one of their names changed, so anything that
+    /// lists them (the window's list, the tray submenu) has to read it again.
+    ProfilesChanged,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

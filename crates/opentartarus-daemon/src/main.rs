@@ -22,7 +22,7 @@ use opentartarus_daemon::playback::{
 use opentartarus_daemon::server::{accept_loop, bind_exclusive, emit_event, listen_error_code};
 use opentartarus_daemon::spawn_ui::UiSupervisor;
 use opentartarus_daemon::tray::{
-    spawn_tray, tray_name_from_applied_params, tray_name_from_profile_id, TrayCmd,
+    active_profile_name, profiles_from_rows, spawn_tray, TrayCmd, TrayProfile,
 };
 use opentartarus_daemon::uinput_sink::{token_from_evdev, UinputSink};
 use opentartarus_daemon::{daemon_lighting, set_daemon_lighting_usb, DaemonLighting};
@@ -35,15 +35,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::broadcast;
 
-const DEFAULT_PROFILE_NAME: &str = "Default";
 const POLL_INTERVAL_MS: u64 = 250;
 const POLL_INTERVAL: Duration = Duration::from_millis(POLL_INTERVAL_MS);
 const TICK_INTERVAL_MS: u64 = 10;
 const TICK_INTERVAL: Duration = Duration::from_millis(TICK_INTERVAL_MS);
 const KEY_DOWN: i32 = 1;
 const EV_SYN: u16 = 0;
-const ALREADY_RUNNING_EXIT: i32 = 1;
 const SUCCESS_EXIT: i32 = 0;
+const FAILURE_EXIT: i32 = 1;
 
 struct SystemClock;
 
@@ -66,12 +65,25 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-fn active_profile_name<L: LightingClient>(state: &DaemonState<L>) -> String {
-    state
-        .active_id
-        .as_deref()
-        .map(tray_name_from_profile_id)
-        .unwrap_or_else(|| DEFAULT_PROFILE_NAME.to_string())
+/// Every profile the window would list, as the tray needs them. It goes
+/// through the same request the window uses, so the two never disagree about
+/// which profiles there are or what they are called.
+fn tray_profiles<L: LightingClient>(state: &mut DaemonState<L>) -> Vec<TrayProfile> {
+    match handle_request(state, Method::ListProfiles, json!({}), now_ms()) {
+        Ok(result) => profiles_from_rows(&result),
+        Err(code) => {
+            log::write(&code.log_line(None));
+            Vec::new()
+        }
+    }
+}
+
+/// The profile list and the name of the live one, read together so the tray
+/// submenu and the tooltip always come from the same moment.
+fn tray_state<L: LightingClient>(state: &mut DaemonState<L>) -> (Vec<TrayProfile>, String) {
+    let profiles = tray_profiles(state);
+    let name = active_profile_name(state.active_id.as_deref(), &profiles);
+    (profiles, name)
 }
 
 const USB_ID_HEX_WIDTH: usize = 4;
@@ -97,10 +109,14 @@ fn device_event_params<L: LightingClient>(state: &DaemonState<L>) -> serde_json:
 
 #[tokio::main]
 async fn main() {
+    // A machine can have more than one thing set to start the daemon at
+    // login. The first one to take the lock does the work and the rest find
+    // it already running, which is the wanted outcome, not a failure. Saying
+    // so with a success code keeps a service manager from starting them
+    // again and again.
     let code = match run().await {
-        Ok(()) => SUCCESS_EXIT,
-        Err(ErrorCode::AlreadyRunning) => ALREADY_RUNNING_EXIT,
-        Err(_) => ALREADY_RUNNING_EXIT,
+        Ok(()) | Err(ErrorCode::AlreadyRunning) => SUCCESS_EXIT,
+        Err(_) => FAILURE_EXIT,
     };
     std::process::exit(code);
 }
@@ -109,8 +125,10 @@ async fn run() -> Result<(), ErrorCode> {
     let paths = Paths::from_env();
     log::init(&paths.log_file);
 
-    let listener = match bind_exclusive(&paths.socket) {
-        Ok(listener) => listener,
+    // The lock has to outlive the socket: dropping it would let a second
+    // daemon in while this one is still running.
+    let (listener, _instance_lock) = match bind_exclusive(&paths.socket) {
+        Ok(held) => held,
         Err(err) => {
             let code = listen_error_code(&err);
             log::write(&code.log_line(Some(&err.to_string())));
@@ -171,7 +189,7 @@ async fn run() -> Result<(), ErrorCode> {
         }
     }
 
-    let profile_name = active_profile_name(&state);
+    let (tray_profile_rows, profile_name) = tray_state(&mut state);
     let state = Arc::new(Mutex::new(state));
     let sink = Arc::new(Mutex::new(sink));
     let quit = Arc::new(AtomicBool::new(false));
@@ -181,7 +199,7 @@ async fn run() -> Result<(), ErrorCode> {
     let mut events_rx = event_tx.subscribe();
     let (tray_tx, mut tray_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    let tray_icon = tray::OpenTartarusTray::new(profile_name, tray_tx.clone());
+    let tray_icon = tray::OpenTartarusTray::new(profile_name, tray_profile_rows, tray_tx.clone());
     let tray_handle = spawn_tray(tray_icon).await;
     let _tray_keep_alive = tray_tx;
 
@@ -259,23 +277,39 @@ async fn run() -> Result<(), ErrorCode> {
             }
             event = events_rx.recv() => {
                 match event {
-                    Ok(msg) if msg.method == EventMethod::ProfileApplied => {
-                        if let Some(name) = tray_name_from_applied_params(&msg.params) {
-                            if let Some(handle) = &tray_handle {
-                                handle
-                                    .update(|tray_state| tray_state.profile_name = name)
-                                    .await;
-                            }
-                        }
-                    }
-                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
-                        let name = {
-                            let st = state.lock().expect("daemon state");
-                            active_profile_name(&st)
+                    // A profile was applied, the set of profiles changed,
+                    // or events were missed. In each case the tray is told
+                    // again what the profiles are and which one is live.
+                    Ok(msg)
+                        if matches!(
+                            msg.method,
+                            EventMethod::ProfileApplied | EventMethod::ProfilesChanged
+                        ) =>
+                    {
+                        let (profiles, name) = {
+                            let mut st = state.lock().expect("daemon state");
+                            tray_state(&mut st)
                         };
                         if let Some(handle) = &tray_handle {
                             handle
-                                .update(|tray_state| tray_state.profile_name = name)
+                                .update(|tray| {
+                                    tray.profiles = profiles;
+                                    tray.profile_name = name;
+                                })
+                                .await;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        let (profiles, name) = {
+                            let mut st = state.lock().expect("daemon state");
+                            tray_state(&mut st)
+                        };
+                        if let Some(handle) = &tray_handle {
+                            handle
+                                .update(|tray| {
+                                    tray.profiles = profiles;
+                                    tray.profile_name = name;
+                                })
                                 .await;
                         }
                     }

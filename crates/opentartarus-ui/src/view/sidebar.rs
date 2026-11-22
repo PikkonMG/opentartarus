@@ -1,5 +1,5 @@
 use crate::app::{App, Message, ProfileRow};
-use crate::keys::NEW_PROFILE_INPUT_ID;
+use crate::keys::{NEW_PROFILE_INPUT_ID, RENAME_PROFILE_INPUT_ID};
 use crate::theme;
 use crate::view::widgets::{
     accent_text_button, danger_text_button, row_button, section_label, selected_row_button,
@@ -33,6 +33,15 @@ pub fn profile_list(app: &App) -> Element<'_, Message> {
     let mut list = column![].spacing(theme::SPACE_XXS);
     for profile in &app.profiles {
         let selected = row_is_selected(app, profile);
+
+        // A row being renamed is the name box itself. Any profile can be
+        // renamed, shipped ones included; a renamed shipped profile counts
+        // as edited, so "Revert to shipped" puts its own name back.
+        if let Some(name) = renaming_name(app, profile) {
+            list = list.push(rename_control(name));
+            continue;
+        }
+
         let entry = row![
             swatch(profile_swatch_color(profile), theme::SWATCH_SIZE),
             text(&profile.name).size(theme::TEXT_BODY),
@@ -68,6 +77,15 @@ pub fn profile_list(app: &App) -> Element<'_, Message> {
             );
         } else {
             list = list.push(select);
+        }
+
+        if selected {
+            list = list.push(
+                button(text(theme::BUTTON_RENAME_PROFILE).size(theme::TEXT_SMALL))
+                    .padding([theme::SPACE_XXS, REVERT_INDENT])
+                    .on_press(Message::StartRenameProfile(profile.id.clone()))
+                    .style(accent_text_button),
+            );
         }
 
         if profile.is_active && profile.can_revert {
@@ -128,6 +146,33 @@ fn new_profile_control(app: &App) -> Element<'_, Message> {
     }
 }
 
+/// The name typed so far when this row is the one being renamed.
+pub fn renaming_name<'a>(app: &'a App, row: &ProfileRow) -> Option<&'a str> {
+    app.renaming_profile
+        .as_ref()
+        .filter(|(id, _)| *id == row.id)
+        .map(|(_, name)| name.as_str())
+}
+
+/// The row turned into a name box. Enter saves, Escape or the `x` cancels,
+/// which is how `+ New profile` behaves as well.
+fn rename_control(name: &str) -> Element<'_, Message> {
+    row![
+        text_input(theme::RENAME_PROFILE_PLACEHOLDER, name)
+            .id(text_input::Id::new(RENAME_PROFILE_INPUT_ID))
+            .size(theme::TEXT_BODY)
+            .on_input(Message::RenameProfileNameChanged)
+            .on_submit(Message::SubmitRenameProfile),
+        button(text(theme::BUTTON_CANCEL_RENAME_PROFILE).size(theme::TEXT_BODY))
+            .padding([theme::SPACE_XXS, theme::SPACE_SM])
+            .on_press(Message::CancelRenameProfile)
+            .style(danger_text_button),
+    ]
+    .spacing(theme::SPACE_XXS)
+    .align_y(Alignment::Center)
+    .into()
+}
+
 /// Whether a row shows its own delete control. Only custom profiles do.
 pub fn row_is_deletable(row: &ProfileRow) -> bool {
     row.can_delete
@@ -164,6 +209,25 @@ mod tests {
         assert!(
             !custom.can_revert,
             "nothing shipped to revert a custom profile to"
+        );
+    }
+
+    #[test]
+    fn only_the_row_being_renamed_turns_into_a_name_box() {
+        let mut app = App {
+            phase: Phase::Running,
+            ..App::default()
+        };
+        let dota = row("dota-2", false, None);
+        let mine = row("my-raid-layout", false, None);
+        assert_eq!(renaming_name(&app, &dota), None);
+
+        app.renaming_profile = Some(("dota-2".into(), "Dota, my way".into()));
+        assert_eq!(renaming_name(&app, &dota), Some("Dota, my way"));
+        assert_eq!(
+            renaming_name(&app, &mine),
+            None,
+            "one box at a time, on the row it belongs to"
         );
     }
 

@@ -1,7 +1,8 @@
 use crate::client::{self, FixPermissionsOutcome, Outgoing};
 use crate::keys::{
-    capture_window_key, is_combo_id, is_new_profile_id, query_focused_id, submit_record_key_params,
-    submit_record_mouse_params, KeyCapture, NEW_PROFILE_INPUT_ID,
+    capture_window_key, is_combo_id, is_new_profile_id, is_rename_profile_id, query_focused_id,
+    submit_record_key_params, submit_record_mouse_params, KeyCapture, NEW_PROFILE_INPUT_ID,
+    RENAME_PROFILE_INPUT_ID,
 };
 use crate::theme;
 use iced::advanced::widget::Id;
@@ -138,6 +139,11 @@ pub enum Message {
     /// Opens the inline name box at the bottom of the profile list.
     StartNewProfile,
     NewProfileNameChanged(String),
+    /// Opens the rename box on the profile with this id.
+    StartRenameProfile(String),
+    RenameProfileNameChanged(String),
+    SubmitRenameProfile,
+    CancelRenameProfile,
     /// Creates the profile from the typed name, as a copy of the selected one.
     SubmitNewProfile,
     CancelNewProfile,
@@ -222,6 +228,9 @@ pub struct App {
     /// `Some` while the inline name box at the bottom of the profile list is
     /// open; the text is what has been typed so far.
     pub new_profile_name: Option<String>,
+    /// The profile being renamed and the name typed so far. `None` when no
+    /// rename box is open.
+    pub renaming_profile: Option<(String, String)>,
     /// How the active profile reads the thumbstick.
     pub stick_mode: StickMode,
     /// How far the stick is turned, the same for every profile.
@@ -263,6 +272,7 @@ impl Default for App {
             hovered_key: None,
             lighting_saved: false,
             new_profile_name: None,
+            renaming_profile: None,
             stick_mode: StickMode::default(),
             stick_rotation_deg: 0,
         }
@@ -400,6 +410,12 @@ impl App {
                 if is_new_profile_id(focused.as_ref()) {
                     if matches!(key, Key::Named(Named::Escape)) {
                         self.new_profile_name = None;
+                    }
+                    return Task::none();
+                }
+                if is_rename_profile_id(focused.as_ref()) {
+                    if matches!(key, Key::Named(Named::Escape)) {
+                        self.renaming_profile = None;
                     }
                     return Task::none();
                 }
@@ -656,6 +672,41 @@ impl App {
             }
             Message::CancelNewProfile => {
                 self.new_profile_name = None;
+                Task::none()
+            }
+            Message::StartRenameProfile(id) => {
+                self.menu_open = false;
+                let current = self
+                    .profiles
+                    .iter()
+                    .find(|row| row.id == id)
+                    .map(|row| row.name.clone())
+                    .unwrap_or_default();
+                self.renaming_profile = Some((id, current));
+                text_input::focus(text_input::Id::new(RENAME_PROFILE_INPUT_ID))
+            }
+            Message::RenameProfileNameChanged(text) => {
+                if let Some((_, name)) = self.renaming_profile.as_mut() {
+                    *name = text;
+                }
+                Task::none()
+            }
+            Message::SubmitRenameProfile => {
+                // A blank name is a no-op, not an error: the box stays open
+                // so the user can type one, the same as creating a profile.
+                let Some((id, name)) = self.renaming_profile.as_ref() else {
+                    return Task::none();
+                };
+                let name = name.trim();
+                if name.is_empty() {
+                    return Task::none();
+                }
+                self.send(Method::RenameProfile, json!({ "id": id, "name": name }));
+                self.renaming_profile = None;
+                Task::none()
+            }
+            Message::CancelRenameProfile => {
+                self.renaming_profile = None;
                 Task::none()
             }
             Message::DeleteProfile(id) => {
@@ -971,6 +1022,10 @@ impl App {
                     self.active_profile_id = Some(id.to_string());
                     self.load_profile(id);
                 }
+                self.send(Method::ListProfiles, json!({}));
+                Task::none()
+            }
+            EventMethod::ProfilesChanged => {
                 self.send(Method::ListProfiles, json!({}));
                 Task::none()
             }
@@ -1469,6 +1524,72 @@ mod tests {
             error: None,
         });
         assert_eq!(app.banner(), Some(Banner::NoDevice));
+    }
+
+    fn profile_row(id: &str, name: &str) -> ProfileRow {
+        ProfileRow {
+            id: id.into(),
+            name: name.into(),
+            is_active: false,
+            can_revert: true,
+            can_delete: false,
+            color: None,
+        }
+    }
+
+    /// The other half of issue #4: a profile can be given a name of the
+    /// user's own, shipped ones included.
+    #[test]
+    fn renaming_a_profile_sends_the_trimmed_name_and_closes_the_box() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        app.profiles = vec![profile_row("dota-2", "Dota 2")];
+
+        let _ = app.update(Message::StartRenameProfile("dota-2".into()));
+        assert_eq!(
+            app.renaming_profile,
+            Some(("dota-2".into(), "Dota 2".into())),
+            "the box opens with the name it has now"
+        );
+
+        let _ = app.update(Message::RenameProfileNameChanged("  Dota, my way  ".into()));
+        let _ = app.update(Message::SubmitRenameProfile);
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::RenameProfile);
+        assert_eq!(outgoing.params["id"], "dota-2");
+        assert_eq!(outgoing.params["name"], "Dota, my way");
+        assert_eq!(app.renaming_profile, None, "the box closes once it is sent");
+    }
+
+    #[test]
+    fn a_blank_rename_sends_nothing_and_leaves_the_box_open() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        app.profiles = vec![profile_row("dota-2", "Dota 2")];
+
+        let _ = app.update(Message::StartRenameProfile("dota-2".into()));
+        let _ = app.update(Message::RenameProfileNameChanged("   ".into()));
+        let _ = app.update(Message::SubmitRenameProfile);
+        assert!(rx.try_recv().is_err(), "a blank name sends nothing");
+        assert!(app.renaming_profile.is_some(), "the box stays open");
+
+        let _ = app.update(Message::CancelRenameProfile);
+        assert_eq!(app.renaming_profile, None);
+    }
+
+    #[test]
+    fn a_profiles_changed_event_reads_the_list_again() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        let _ = app.update(Message::IpcEvent {
+            method: EventMethod::ProfilesChanged,
+            params: json!({}),
+        });
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::ListProfiles);
     }
 
     #[test]
