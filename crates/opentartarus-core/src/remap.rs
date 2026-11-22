@@ -3,9 +3,9 @@ use crate::constants::{
     USB_VID_RAZER,
 };
 use crate::keymap::{
-    analog_axis_center, analog_axis_ratio_for, decode_hat, modifier_to_evdev,
-    mouse_button_to_evdev, token_to_evdev, KeyMap, ABS_HAT0X, ABS_HAT0Y, ABS_RX, ABS_RY, ABS_X,
-    ABS_Y, BTN_THUMBL, BTN_THUMBR, EV_ABS, EV_KEY, EV_REL, GAMEPAD_AXIS_MAX, REL_WHEEL,
+    analog_axis_ratio, decode_hat, modifier_to_evdev, mouse_button_to_evdev, token_to_evdev,
+    KeyMap, ABS_HAT0X, ABS_HAT0Y, ABS_RX, ABS_RY, ABS_X, ABS_Y, BTN_THUMBL, BTN_THUMBR, EV_ABS,
+    EV_KEY, EV_REL, GAMEPAD_AXIS_CENTER, GAMEPAD_AXIS_MAX, REL_WHEEL,
 };
 use crate::types::{
     Action, DeviceModel, Edge, KeyId, MacroKind, MacroStep, MouseTarget, Profile, ProfileSwitch,
@@ -137,8 +137,8 @@ impl RemapEngine {
             hat_x: 0,
             hat_y: 0,
             hat_dir: None,
-            analog_x: analog_axis_center(model),
-            analog_y: analog_axis_center(model),
+            analog_x: GAMEPAD_AXIS_CENTER,
+            analog_y: GAMEPAD_AXIS_CENTER,
             analog_left: false,
             analog_right: false,
             analog_up: false,
@@ -399,8 +399,8 @@ impl RemapEngine {
     /// Plays the stick's current position through the stick mode.
     fn drive_stick(&mut self, ev: RawEvent, sink: &mut impl EventSink, clock: &mut impl Clock) {
         let (x, y) = rotate_stick(
-            analog_axis_ratio_for(self.model, self.analog_x),
-            analog_axis_ratio_for(self.model, self.analog_y),
+            analog_axis_ratio(self.analog_x),
+            analog_axis_ratio(self.analog_y),
             self.stick_rotation_deg,
         );
         match self.stick_mode {
