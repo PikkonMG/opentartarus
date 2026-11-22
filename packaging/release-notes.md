@@ -4,6 +4,22 @@ This is a test build. It works with a Tartarus V2 and a Tartarus V2 Pro on Wayla
 
 ## What changed in 0.2.1
 
+### One daemon, one tray icon
+
+Opening the app from the tray could start a second copy of it, and most of the time it did. There were two reasons. A machine can have more than one thing set to start the daemon at login, and when two started in the same moment they both saw a socket with nobody on it, both deleted it and both bound one of their own. Each then had a tray icon, and the one you clicked was not always the one holding the keypad.
+
+The daemon now takes an exclusive lock before it touches the socket at all. The first one to get it does the work. Any other finds it held, says so in the log and stops with a success code, so nothing tries to start it again. Ten daemons started at the same moment leave exactly one running.
+
+Thanks to BerosCerberus for the report, and to colincci for confirming it on a second machine (#4).
+
+### Profiles
+
+Any profile can be renamed now, the shipped ones included: select it in the list and press "Rename". Renaming a shipped profile counts as an edit, so that copy stops following the app, and "Revert to shipped" puts its own name back along with the rest of it.
+
+The tray menu's "Profiles" list used to show only the profiles that ship with the app. It now shows yours as well, under the names you gave them.
+
+### The Tartarus V2 key map
+
 The Tartarus V2 key map was wrong. Fifteen of its twenty keys pointed at the wrong slot, so a profile's bindings landed on keys you did not pick. The thumb pad was read as a joystick hat, which the V2 does not have, so the thumb pad did nothing. The mode button was read as F24, which the pad does not send either.
 
 The map is now recorded from a real V2 (`1532:022b`, hardware revision `0200`) with nothing else holding the pad: all 20 keys, the wheel, the thumb pad and the mode button. The V2 turns out to send the same codes as the Tartarus Pro, so the two pads now share one map.

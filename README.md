@@ -42,6 +42,10 @@ The Tartarus V2 Pro's face is shaped differently, so every profile has a second 
 
 You can make your own profiles. "+ New profile" at the bottom of the list copies whatever is selected under a new name. Custom profiles get a delete button. Shipped profiles cannot be deleted, but any edit to one can be undone with "Revert to shipped".
 
+Any profile can be renamed, shipped ones included: select it and press "Rename". Enter saves the name and Escape drops it. Renaming a shipped profile counts as an edit, so that copy stops following the app and "Revert to shipped" puts its own name back with the rest of it.
+
+The tray menu lists every profile under "Profiles", your own as well as the shipped ones, under the names you gave them.
+
 The first time you apply a shipped profile the app copies it into `~/.config/opentartarus/profiles/`. Edits go to that copy. A copy you have never edited follows the app: when a new version ships a better layout for that game, your copy is replaced with it. The moment you change one key, the copy becomes yours and the app stops touching it. "Revert to shipped" throws your changes away and puts it back under the app's care.
 
 ## Tartarus V2
@@ -162,6 +166,8 @@ The keypad and `/dev/uinput` need the group `opentartarus`. The udev rule in `pa
 After a successful fix, unplug the Tartarus, wait a second, and plug it back in. If the app still cannot open the device, sign out and back in so the new group applies.
 
 Login start files are in `packaging/`: a systemd user unit at `packaging/systemd/opentartarus-daemon.service`, and `packaging/autostart/opentartarus-daemon.desktop`. The window launcher is `packaging/desktop/opentartarus.desktop`.
+
+Only one daemon ever runs. It takes an exclusive lock on `daemon.lock`, beside its socket in the runtime directory, before it touches anything else. A second one finds the lock held, writes `already_running` to the log and stops with a success code, so having both login start files in place costs nothing and a service manager does not try again.
 
 ### Icon
 
