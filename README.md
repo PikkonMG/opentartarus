@@ -10,7 +10,7 @@ Two processes make up the app. A tray daemon grabs the keypad, plays the remaps,
 
 Source: https://github.com/PikkonMG/opentartarus
 
-**Status: testing.** Version 0.2.0 is an early build, marked as a pre-release on GitHub. It works on the developer's machine with a Tartarus V2. The Tartarus Pro key map was recorded from a real Pro by a contributor, who checked its keys, wheel, stick and mode button on that pad; the developer has no Pro to try it on. The Tartarus V2 Pro key map was recorded from a real V2 Pro, and its keys, stick and profiles were tried on one. Bug reports are welcome; see CONTRIBUTING.md for what to include.
+**Status: testing.** Version 0.2.1 is an early build, marked as a pre-release on GitHub. The Tartarus V2 key map was recorded from a real V2 (`1532:022b`, hardware revision `0200`) on the developer's machine: its 20 keys, wheel, thumb pad and mode button. The Tartarus Pro key map was recorded from a real Pro by a contributor, who checked its keys, wheel, stick and mode button on that pad; the developer has no Pro to try it on. The Tartarus V2 Pro key map was recorded from a real V2 Pro, and its keys, stick and profiles were tried on one. Bug reports are welcome; see CONTRIBUTING.md for what to include.
 
 ## What you need
 

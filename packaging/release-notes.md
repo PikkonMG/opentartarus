@@ -2,6 +2,20 @@ OpenTartarus is a Linux app for the Razer Tartarus V2, Tartarus Pro and Tartarus
 
 This is a test build. It works with a Tartarus V2 and a Tartarus V2 Pro on Wayland, and a contributor reports it working with a Tartarus Pro. It has not been through many distros. If something does not work, please say so, and say which pad and which distro you have. CONTRIBUTING.md lists the rest of what helps.
 
+## What changed in 0.2.1
+
+The Tartarus V2 key map was wrong. Fifteen of its twenty keys pointed at the wrong slot, so a profile's bindings landed on keys you did not pick. The thumb pad was read as a joystick hat, which the V2 does not have, so the thumb pad did nothing. The mode button was read as F24, which the pad does not send either.
+
+The map is now recorded from a real V2 (`1532:022b`, hardware revision `0200`) with nothing else holding the pad: all 20 keys, the wheel, the thumb pad and the mode button. The V2 turns out to send the same codes as the Tartarus Pro, so the two pads now share one map.
+
+The thumb pad is four directions, not eight. Push a corner and the pad holds two directions at once, so a profile that binds all four still gets the corners. A binding saved on a diagonal is dropped, because no V2 ever sent one.
+
+If you made a profile on a V2 before this, its keys now land where you meant them to.
+
+Thanks to colincci, who reported it in #5 and checked three pads.
+
+One thing to watch: another remapper that grabs keyboards, such as keyd or input-remapper, takes the V2's key nodes for itself, and OpenTartarus then sees no presses from the pad. Stop the other remapper, or leave the keypad out of its configuration.
+
 ## What it does
 
 - 13 profiles, each built from that game's real default key bindings
