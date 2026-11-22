@@ -84,3 +84,10 @@ pub const HELD_SHIFT: &str = "Shift";
 pub const HELD_CTRL: &str = "Ctrl";
 pub const HELD_ALT: &str = "Alt";
 pub const AUTOMATION_WARNING: &str = "Many games ban more than one action per key press. Check the game's rules before using this in play.";
+
+/// The release notice. It names the new version and leaves the reader in
+/// charge: nothing downloads or installs itself.
+pub const UPDATE_NOTICE_PREFIX: &str = "Version ";
+pub const UPDATE_NOTICE_SUFFIX: &str = " is out.";
+pub const BUTTON_OPEN_RELEASES: &str = "What's new";
+pub const BUTTON_DISMISS_UPDATE: &str = "Not now";

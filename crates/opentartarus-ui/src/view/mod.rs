@@ -6,6 +6,7 @@ pub(crate) mod lighting_tab;
 mod menu;
 mod sidebar;
 mod status;
+mod update_notice;
 mod widgets;
 pub(crate) mod window_icon;
 
@@ -25,6 +26,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let page = column![
         header::header_bar(app),
         banner::banner_bar(app),
+        update_notice::update_bar(app),
         body,
         status::status_bar(app),
     ]

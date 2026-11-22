@@ -7,7 +7,7 @@ use crate::keys::{
 use crate::theme;
 use iced::advanced::widget::Id;
 use iced::futures::channel::mpsc;
-use iced::keyboard::key::Named;
+use iced::keyboard::key::{Code, Named, Physical};
 use iced::keyboard::{self, Key};
 use iced::mouse;
 use iced::widget::text_input;
@@ -99,14 +99,21 @@ pub enum Message {
     ComboFocusChanged(Option<Id>),
     ComboKey {
         key: Key,
+        physical: Physical,
         modifiers: keyboard::Modifiers,
     },
     ComboKeyResolved {
         key: Key,
+        physical: Physical,
         modifiers: keyboard::Modifiers,
         focused: Option<Id>,
     },
     HoldRepeat(bool),
+    /// The one-time release check has answered. `None` means no news, which
+    /// is also what being offline looks like.
+    UpdateChecked(Option<String>),
+    OpenReleases,
+    DismissUpdate,
     MousePick(MouseTarget),
     /// Binds the selected key to one key that the combo box cannot type,
     /// such as a bare Shift.
@@ -208,6 +215,9 @@ pub struct App {
     pub evdev_ok: bool,
     pub uinput_ok: bool,
     pub grab_conflict: Option<String>,
+    /// The tag of a newer release, once the start-up check has found one.
+    /// Cleared when the user dismisses the notice, so it shows once.
+    pub update_tag: Option<String>,
     pub bindings: BTreeMap<KeyId, Action>,
     pub lighting: Lighting,
     /// The active profile's in-game setup step, shown while no key is
@@ -252,6 +262,7 @@ impl Default for App {
             evdev_ok: true,
             uinput_ok: true,
             grab_conflict: None,
+            update_tag: None,
             bindings: BTreeMap::new(),
             lighting: Lighting {
                 effect: LightingEffect::None,
@@ -293,9 +304,16 @@ impl App {
             client::subscription(),
             window::close_requests().map(Message::CloseRequested),
             event::listen_with(|event, _status, _id| match event {
-                Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) => {
-                    Some(Message::ComboKey { key, modifiers })
-                }
+                Event::Keyboard(keyboard::Event::KeyPressed {
+                    key,
+                    physical_key,
+                    modifiers,
+                    ..
+                }) => Some(Message::ComboKey {
+                    key,
+                    physical: physical_key,
+                    modifiers,
+                }),
                 Event::Mouse(mouse::Event::ButtonPressed(_)) => Some(Message::RefreshComboFocus),
                 _ => None,
             }),
@@ -388,19 +406,25 @@ impl App {
                 self.combo_focused = is_combo_id(id.as_ref());
                 Task::none()
             }
-            Message::ComboKey { key, modifiers } => {
+            Message::ComboKey {
+                key,
+                physical,
+                modifiers,
+            } => {
                 if self.recording {
-                    self.apply_captured_key(&key, modifiers, self.combo_focused);
+                    self.apply_captured_key(&key, physical, modifiers, self.combo_focused);
                     return Task::none();
                 }
                 query_focused_id().map(move |focused| Message::ComboKeyResolved {
                     key: key.clone(),
+                    physical,
                     modifiers,
                     focused,
                 })
             }
             Message::ComboKeyResolved {
                 key,
+                physical,
                 modifiers,
                 focused,
             } => {
@@ -420,7 +444,20 @@ impl App {
                     return Task::none();
                 }
                 self.combo_focused = is_combo_id(focused.as_ref());
-                self.apply_captured_key(&key, modifiers, self.combo_focused);
+                self.apply_captured_key(&key, physical, modifiers, self.combo_focused);
+                Task::none()
+            }
+            Message::UpdateChecked(tag) => {
+                self.update_tag = tag;
+                Task::none()
+            }
+            Message::OpenReleases => {
+                crate::update::open_releases_page();
+                self.update_tag = None;
+                Task::none()
+            }
+            Message::DismissUpdate => {
+                self.update_tag = None;
                 Task::none()
             }
             Message::HoldRepeat(enabled) => {
@@ -873,10 +910,11 @@ impl App {
     fn apply_captured_key(
         &mut self,
         key: &Key,
+        physical: Physical,
         modifiers: keyboard::Modifiers,
         combo_focused: bool,
     ) {
-        let token = map_key_token(key);
+        let token = map_key_token(key, physical);
         let mods = map_modifiers(modifiers);
         match capture_window_key(self.recording, combo_focused, token, mods) {
             KeyCapture::SubmitRecord { key, modifiers } => {
@@ -1312,7 +1350,40 @@ fn map_modifiers(modifiers: keyboard::Modifiers) -> Vec<Modifier> {
     out
 }
 
-fn map_key_token(key: &Key) -> Option<KeyToken> {
+/// The numpad keys carry no logical name of their own: the window reports
+/// numpad `1` as `Character("1")` and numpad Enter as `Named::Enter`, so only
+/// the physical key tells them apart from the main block. They are read first
+/// for that reason, and the logical key is read after, because a letter must
+/// follow the user's layout rather than its position.
+fn map_numpad_token(physical: Physical) -> Option<KeyToken> {
+    let Physical::Code(code) = physical else {
+        return None;
+    };
+    match code {
+        Code::Numpad0 => Some(KeyToken::NumPad0),
+        Code::Numpad1 => Some(KeyToken::NumPad1),
+        Code::Numpad2 => Some(KeyToken::NumPad2),
+        Code::Numpad3 => Some(KeyToken::NumPad3),
+        Code::Numpad4 => Some(KeyToken::NumPad4),
+        Code::Numpad5 => Some(KeyToken::NumPad5),
+        Code::Numpad6 => Some(KeyToken::NumPad6),
+        Code::Numpad7 => Some(KeyToken::NumPad7),
+        Code::Numpad8 => Some(KeyToken::NumPad8),
+        Code::Numpad9 => Some(KeyToken::NumPad9),
+        Code::NumpadEnter => Some(KeyToken::NumEnter),
+        Code::NumpadAdd => Some(KeyToken::NumPlus),
+        Code::NumpadSubtract => Some(KeyToken::NumMinus),
+        Code::NumpadDivide => Some(KeyToken::NumSlash),
+        Code::NumpadMultiply | Code::NumpadStar => Some(KeyToken::NumStar),
+        Code::NumpadDecimal => Some(KeyToken::NumDot),
+        _ => None,
+    }
+}
+
+fn map_key_token(key: &Key, physical: Physical) -> Option<KeyToken> {
+    if let Some(token) = map_numpad_token(physical) {
+        return Some(token);
+    }
     match key {
         Key::Character(c) => match c.to_ascii_lowercase().as_str() {
             "a" => Some(KeyToken::A),
@@ -1391,6 +1462,17 @@ fn map_key_token(key: &Key) -> Option<KeyToken> {
         Key::Named(Named::F10) => Some(KeyToken::F10),
         Key::Named(Named::F11) => Some(KeyToken::F11),
         Key::Named(Named::F12) => Some(KeyToken::F12),
+        // The lock and volume keys reach the window as `Named` variants.
+        // Without these arms the recorder saw `None` and dropped the press,
+        // so Caps Lock could only be bound by editing the profile by hand.
+        Key::Named(Named::CapsLock) => Some(KeyToken::CapsLock),
+        Key::Named(Named::NumLock) => Some(KeyToken::NumLock),
+        Key::Named(Named::ScrollLock) => Some(KeyToken::ScrollLock),
+        Key::Named(Named::PrintScreen) => Some(KeyToken::PrintScreen),
+        Key::Named(Named::Pause) => Some(KeyToken::Pause),
+        Key::Named(Named::AudioVolumeUp) => Some(KeyToken::VolumeUp),
+        Key::Named(Named::AudioVolumeDown) => Some(KeyToken::VolumeDown),
+        Key::Named(Named::AudioVolumeMute) => Some(KeyToken::Mute),
         Key::Named(Named::Shift)
         | Key::Named(Named::Control)
         | Key::Named(Named::Alt)
@@ -1415,6 +1497,129 @@ mod tests {
             ever_present: true,
             ..App::default()
         }
+    }
+
+    #[test]
+    fn lock_and_volume_keys_are_captured_by_the_recorder() {
+        for (named, token) in [
+            (Named::CapsLock, KeyToken::CapsLock),
+            (Named::NumLock, KeyToken::NumLock),
+            (Named::ScrollLock, KeyToken::ScrollLock),
+            (Named::PrintScreen, KeyToken::PrintScreen),
+            (Named::Pause, KeyToken::Pause),
+            (Named::AudioVolumeUp, KeyToken::VolumeUp),
+            (Named::AudioVolumeDown, KeyToken::VolumeDown),
+            (Named::AudioVolumeMute, KeyToken::Mute),
+        ] {
+            assert_eq!(
+                map_key_token(&Key::Named(named), Physical::Code(Code::Fn)),
+                Some(token)
+            );
+        }
+    }
+
+    #[test]
+    fn numpad_keys_are_their_own_tokens_not_the_main_block_digits() {
+        for (code, key, token) in [
+            (Code::Numpad0, Key::Character("0".into()), KeyToken::NumPad0),
+            (Code::Numpad1, Key::Character("1".into()), KeyToken::NumPad1),
+            (Code::Numpad2, Key::Character("2".into()), KeyToken::NumPad2),
+            (Code::Numpad3, Key::Character("3".into()), KeyToken::NumPad3),
+            (Code::Numpad4, Key::Character("4".into()), KeyToken::NumPad4),
+            (Code::Numpad5, Key::Character("5".into()), KeyToken::NumPad5),
+            (Code::Numpad6, Key::Character("6".into()), KeyToken::NumPad6),
+            (Code::Numpad7, Key::Character("7".into()), KeyToken::NumPad7),
+            (Code::Numpad8, Key::Character("8".into()), KeyToken::NumPad8),
+            (Code::Numpad9, Key::Character("9".into()), KeyToken::NumPad9),
+            (
+                Code::NumpadEnter,
+                Key::Named(Named::Enter),
+                KeyToken::NumEnter,
+            ),
+            (
+                Code::NumpadAdd,
+                Key::Character("+".into()),
+                KeyToken::NumPlus,
+            ),
+            (
+                Code::NumpadSubtract,
+                Key::Character("-".into()),
+                KeyToken::NumMinus,
+            ),
+            (
+                Code::NumpadDivide,
+                Key::Character("/".into()),
+                KeyToken::NumSlash,
+            ),
+            (
+                Code::NumpadMultiply,
+                Key::Character("*".into()),
+                KeyToken::NumStar,
+            ),
+            (
+                Code::NumpadDecimal,
+                Key::Character(".".into()),
+                KeyToken::NumDot,
+            ),
+        ] {
+            assert_eq!(map_key_token(&key, Physical::Code(code)), Some(token));
+        }
+    }
+
+    #[test]
+    fn numpad_arrows_stay_numpad_keys_with_num_lock_off() {
+        // With Num Lock off the window names numpad 8 `ArrowUp`. The physical
+        // key is what the user pressed, so it wins.
+        assert_eq!(
+            map_key_token(&Key::Named(Named::ArrowUp), Physical::Code(Code::Numpad8)),
+            Some(KeyToken::NumPad8)
+        );
+        assert_eq!(
+            map_key_token(&Key::Named(Named::ArrowUp), Physical::Code(Code::ArrowUp)),
+            Some(KeyToken::Up)
+        );
+    }
+
+    #[test]
+    fn a_main_block_digit_is_not_a_numpad_key() {
+        assert_eq!(
+            map_key_token(&Key::Character("1".into()), Physical::Code(Code::Digit1)),
+            Some(KeyToken::Num1)
+        );
+    }
+
+    #[test]
+    fn recording_numpad_one_submits_the_num1_token() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        app.recording = true;
+        let _ = app.update(Message::ComboKey {
+            key: Key::Character("1".into()),
+            physical: Physical::Code(Code::Numpad1),
+            modifiers: keyboard::Modifiers::default(),
+        });
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::SubmitRecord);
+        assert_eq!(outgoing.params["key"], "num1");
+        assert!(!app.recording);
+    }
+
+    #[test]
+    fn recording_caps_lock_submits_the_capslock_token() {
+        let (tx, mut rx) = mpsc::unbounded();
+        let mut app = running_app();
+        app.ipc_tx = Some(tx);
+        app.recording = true;
+        let _ = app.update(Message::ComboKey {
+            key: Key::Named(Named::CapsLock),
+            physical: Physical::Code(Code::CapsLock),
+            modifiers: keyboard::Modifiers::default(),
+        });
+        let outgoing = rx.try_recv().unwrap();
+        assert_eq!(outgoing.method, Method::SubmitRecord);
+        assert_eq!(outgoing.params["key"], "capslock");
+        assert!(!app.recording);
     }
 
     #[test]
@@ -1875,6 +2080,7 @@ mod tests {
         let _ = app.update(Message::StartNewProfile);
         let _ = app.update(Message::ComboKeyResolved {
             key: Key::Named(Named::Escape),
+            physical: Physical::Code(Code::Escape),
             modifiers: keyboard::Modifiers::default(),
             focused: Some(new_profile_widget_id()),
         });
@@ -1892,6 +2098,7 @@ mod tests {
         let _ = app.update(Message::StartNewProfile);
         let _ = app.update(Message::ComboKeyResolved {
             key: Key::Character("q".into()),
+            physical: Physical::Code(Code::KeyQ),
             modifiers: keyboard::Modifiers::default(),
             focused: Some(new_profile_widget_id()),
         });

@@ -313,11 +313,71 @@ fn token_label(key: KeyToken) -> String {
         KeyToken::Num7 => String::from("7"),
         KeyToken::Num8 => String::from("8"),
         KeyToken::Num9 => String::from("9"),
+        KeyToken::F1 => String::from("F1"),
+        KeyToken::F2 => String::from("F2"),
+        KeyToken::F3 => String::from("F3"),
+        KeyToken::F4 => String::from("F4"),
+        KeyToken::F5 => String::from("F5"),
+        KeyToken::F6 => String::from("F6"),
+        KeyToken::F7 => String::from("F7"),
+        KeyToken::F8 => String::from("F8"),
+        KeyToken::F9 => String::from("F9"),
+        KeyToken::F10 => String::from("F10"),
+        KeyToken::F11 => String::from("F11"),
+        KeyToken::F12 => String::from("F12"),
+        KeyToken::Escape => String::from("Esc"),
+        KeyToken::Tab => String::from("Tab"),
+        KeyToken::Backspace => String::from("Bksp"),
+        KeyToken::Enter => String::from("Enter"),
+        KeyToken::Space => String::from("Space"),
+        KeyToken::Insert => String::from("Ins"),
+        KeyToken::Delete => String::from("Del"),
+        KeyToken::Home => String::from("Home"),
+        KeyToken::End => String::from("End"),
+        KeyToken::PageUp => String::from("PgUp"),
+        KeyToken::PageDown => String::from("PgDn"),
+        KeyToken::Up => String::from("Up"),
+        KeyToken::Down => String::from("Down"),
+        KeyToken::Left => String::from("Left"),
+        KeyToken::Right => String::from("Right"),
+        KeyToken::Minus => String::from("-"),
+        KeyToken::Equal => String::from("="),
+        KeyToken::LeftBrace => String::from("["),
+        KeyToken::RightBracket => String::from("]"),
+        KeyToken::Backslash => String::from("\\"),
+        KeyToken::Semicolon => String::from(";"),
+        KeyToken::Apostrophe => String::from("'"),
+        KeyToken::Grave => String::from("`"),
+        KeyToken::Comma => String::from(","),
+        KeyToken::Dot => String::from("."),
+        KeyToken::Slash => String::from("/"),
         KeyToken::CapsLock => String::from("Caps"),
+        KeyToken::NumLock => String::from("NumLk"),
+        KeyToken::ScrollLock => String::from("ScrLk"),
+        KeyToken::PrintScreen => String::from("PrtSc"),
+        KeyToken::Pause => String::from("Pause"),
+        KeyToken::VolumeUp => String::from("Vol+"),
+        KeyToken::VolumeDown => String::from("Vol-"),
+        KeyToken::Mute => String::from("Mute"),
+        KeyToken::NumPad0 => String::from("Num0"),
+        KeyToken::NumPad1 => String::from("Num1"),
+        KeyToken::NumPad2 => String::from("Num2"),
+        KeyToken::NumPad3 => String::from("Num3"),
+        KeyToken::NumPad4 => String::from("Num4"),
+        KeyToken::NumPad5 => String::from("Num5"),
+        KeyToken::NumPad6 => String::from("Num6"),
+        KeyToken::NumPad7 => String::from("Num7"),
+        KeyToken::NumPad8 => String::from("Num8"),
+        KeyToken::NumPad9 => String::from("Num9"),
+        KeyToken::NumEnter => String::from("NumEnt"),
+        KeyToken::NumPlus => String::from("Num+"),
+        KeyToken::NumMinus => String::from("Num-"),
+        KeyToken::NumSlash => String::from("Num/"),
+        KeyToken::NumStar => String::from("Num*"),
+        KeyToken::NumDot => String::from("Num."),
         KeyToken::LeftShift => String::from("Shift"),
         KeyToken::LeftCtrl => String::from("Ctrl"),
         KeyToken::LeftAlt => String::from("Alt"),
-        other => format!("{other:?}"),
     }
 }
 
@@ -352,7 +412,8 @@ mod tests {
     use super::*;
     use crate::pack::SHIPPED_IDS;
     use crate::types::{
-        Action, Edge, KeyToken, MacroKind, MacroStep, Modifier, MouseButton, MouseTarget, ScrollDir,
+        Action, Edge, KeyToken, MacroKind, MacroStep, Modifier, MouseButton, MouseTarget,
+        ScrollDir, ALL_KEY_TOKENS,
     };
 
     #[test]
@@ -410,6 +471,87 @@ mod tests {
             (KeyToken::LeftShift, "Shift"),
             (KeyToken::LeftCtrl, "Ctrl"),
             (KeyToken::LeftAlt, "Alt"),
+        ] {
+            assert_eq!(
+                bind_label(Some(&Action::Key {
+                    key: token,
+                    modifiers: vec![]
+                })),
+                label
+            );
+        }
+    }
+
+    #[test]
+    fn numpad_keys_read_apart_from_the_main_block() {
+        for (token, label) in [
+            (KeyToken::NumPad1, "Num1"),
+            (KeyToken::NumPad0, "Num0"),
+            (KeyToken::NumEnter, "NumEnt"),
+            (KeyToken::NumPlus, "Num+"),
+            (KeyToken::NumMinus, "Num-"),
+            (KeyToken::NumSlash, "Num/"),
+            (KeyToken::NumStar, "Num*"),
+            (KeyToken::NumDot, "Num."),
+        ] {
+            assert_eq!(
+                bind_label(Some(&Action::Key {
+                    key: token,
+                    modifiers: vec![]
+                })),
+                label
+            );
+        }
+        assert_ne!(
+            bind_label(Some(&Action::Key {
+                key: KeyToken::NumPad1,
+                modifiers: vec![]
+            })),
+            bind_label(Some(&Action::Key {
+                key: KeyToken::Num1,
+                modifiers: vec![]
+            })),
+        );
+    }
+
+    #[test]
+    fn every_key_has_a_short_label_of_its_own() {
+        const KEYCAP_LABEL_MAX_CHARS: usize = 6;
+        let mut seen = Vec::new();
+        for token in ALL_KEY_TOKENS {
+            let label = bind_label(Some(&Action::Key {
+                key: *token,
+                modifiers: vec![],
+            }));
+            let name = format!("{token:?}");
+            // `token_label` has no catch-all arm, so the compiler already
+            // forces a label per key. What it cannot check is that the label
+            // fits a keycap and names one key only.
+            assert!(!label.is_empty(), "{name} has no label");
+            assert!(
+                label.chars().count() <= KEYCAP_LABEL_MAX_CHARS,
+                "{name} reads as {label:?}, too wide for a keycap"
+            );
+            seen.push((label, name));
+        }
+        // Only the three bare modifiers share a label with a modifier of the
+        // same name, which is what the chips are meant to read like.
+        let mut labels: Vec<&str> = seen.iter().map(|(label, _)| label.as_str()).collect();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(labels.len(), seen.len(), "two keys read the same");
+    }
+
+    #[test]
+    fn lock_and_volume_keys_fit_a_keycap() {
+        for (token, label) in [
+            (KeyToken::NumLock, "NumLk"),
+            (KeyToken::ScrollLock, "ScrLk"),
+            (KeyToken::PrintScreen, "PrtSc"),
+            (KeyToken::Pause, "Pause"),
+            (KeyToken::VolumeUp, "Vol+"),
+            (KeyToken::VolumeDown, "Vol-"),
+            (KeyToken::Mute, "Mute"),
         ] {
             assert_eq!(
                 bind_label(Some(&Action::Key {

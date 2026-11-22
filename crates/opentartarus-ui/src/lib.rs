@@ -3,9 +3,10 @@ pub mod client;
 pub mod keypad;
 pub mod keys;
 pub mod theme;
+pub mod update;
 pub mod view;
 
-use crate::app::App;
+use crate::app::{App, Message};
 use crate::theme::{WINDOW_HEIGHT, WINDOW_WIDTH};
 use iced::Size;
 
@@ -50,7 +51,14 @@ pub fn run() -> iced::Result {
             ..iced::window::Settings::default()
         })
         .exit_on_close_request(false)
-        .run()
+        // The release check is the only thing that must happen once at
+        // start-up rather than in answer to something the user did.
+        .run_with(|| {
+            (
+                App::default(),
+                iced::Task::perform(update::latest_release_tag(), Message::UpdateChecked),
+            )
+        })
 }
 
 #[cfg(test)]

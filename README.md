@@ -145,6 +145,23 @@ The window has no system title bar. Drag it by its own header. The header holds 
 
 The daemon writes its log to `~/.local/state/opentartarus/opentartarus.log`, or under `$XDG_STATE_HOME` if that is set.
 
+## Update check
+
+When the window opens, the app asks GitHub once whether a newer release is
+out. If there is one, a line appears under the header with its version, a
+"What's new" button that opens the releases page, and "Not now" to clear it.
+Nothing downloads or installs itself.
+
+The request sends only the program name and its version. It carries nothing
+about you or your machine. Being offline, or any other failure, leaves the
+window as it is and says nothing.
+
+To make no request at all, set:
+
+```
+OPENTARTARUS_NO_UPDATE_CHECK=1
+```
+
 ## How to test
 
 ```
