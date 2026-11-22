@@ -321,22 +321,12 @@ const HALF: f32 = 2.0;
 /// comically large on a maximised window.
 const MAX_SCALE: f32 = 2.0;
 
-/// The eight thumb-pad directions, by 3x3 cell. The centre cell is absent on
-/// purpose: it is drawn as a label but is not clickable.
-const THUMB_PAD_CELLS: [(KeyId, usize, usize); 8] = [
-    (KeyId::ThumbNw, 0, 0),
-    (KeyId::ThumbN, 1, 0),
-    (KeyId::ThumbNe, 2, 0),
-    (KeyId::ThumbW, 0, 1),
-    (KeyId::ThumbE, 2, 1),
-    (KeyId::ThumbSw, 0, 2),
-    (KeyId::ThumbS, 1, 2),
-    (KeyId::ThumbSe, 2, 2),
-];
-
-/// The Pro's stick sends the four cardinal directions and no diagonals, so
-/// it uses the four edge cells of the same 3x3 grid.
-const PRO_STICK_CELLS: [(KeyId, usize, usize); 4] = [
+/// The V2's thumb pad and the Pro's stick both send the four cardinal
+/// directions and no diagonals, so both use the four edge cells of a 3x3
+/// grid. The corner and centre cells are absent on purpose: a corner push
+/// holds two directions, and the centre is drawn as a label that is not
+/// clickable.
+const THUMB_CARDINAL_CELLS: [(KeyId, usize, usize); 4] = [
     (KeyId::ThumbN, 1, 0),
     (KeyId::ThumbW, 0, 1),
     (KeyId::ThumbE, 2, 1),
@@ -484,11 +474,7 @@ fn key_rects(size: Size, model: Option<DeviceModel>) -> Vec<(KeyId, Rectangle)> 
     ));
 
     let pad_left = row_left + THUMB_KEY_WIDTH + THUMB_CLUSTER_GAP;
-    let cells: &[(KeyId, usize, usize)] = match model {
-        Some(DeviceModel::Pro) => &PRO_STICK_CELLS,
-        _ => &THUMB_PAD_CELLS,
-    };
-    for (id, column, row) in cells {
+    for (id, column, row) in &THUMB_CARDINAL_CELLS {
         let cell_x = pad_left + *column as f32 * (DPAD_CELL_WIDTH + DPAD_GAP);
         let cell_y = row_top + *row as f32 * (DPAD_CELL_HEIGHT + DPAD_GAP);
         out.push((
@@ -558,45 +544,31 @@ mod tests {
     }
 
     #[test]
-    fn v2_returns_every_key_once_and_no_analog() {
-        let got = ids(BIG, Some(DeviceModel::V2));
-        assert_eq!(got.len(), 32, "20 grid + 4 wheel column + 8 thumb");
-        let mut sorted = got.clone();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(sorted.len(), got.len(), "no key may appear twice");
-        assert!(got.contains(&KeyId::ThumbNw));
-        assert!(got.contains(&KeyId::ThumbSe));
-        assert!(!got.iter().any(|id| matches!(
-            id,
-            KeyId::AnalogUp | KeyId::AnalogDown | KeyId::AnalogLeft | KeyId::AnalogRight
-        )));
-    }
-
-    #[test]
-    fn pro_swaps_the_thumb_pad_for_the_sticks_four_directions() {
-        let got = ids(BIG, Some(DeviceModel::Pro));
-        assert_eq!(got.len(), 28, "20 grid + 4 wheel column + 4 stick cells");
-        for id in [KeyId::ThumbN, KeyId::ThumbE, KeyId::ThumbS, KeyId::ThumbW] {
-            assert!(got.contains(&id), "missing {id:?}");
-        }
-        assert!(!got.iter().any(|id| matches!(
-            id,
-            KeyId::ThumbNe
-                | KeyId::ThumbSe
-                | KeyId::ThumbSw
-                | KeyId::ThumbNw
-                | KeyId::AnalogUp
-                | KeyId::AnalogDown
-                | KeyId::AnalogLeft
-                | KeyId::AnalogRight
-        )));
-        for id in KeyId::ALL {
+    fn the_v2_and_the_pro_draw_the_same_keys_and_no_diagonals() {
+        // Both pads have 20 keys, a wheel and four thumb directions. The
+        // diagonal cells are not drawn: neither pad sends a diagonal of
+        // its own.
+        for model in [DeviceModel::V2, DeviceModel::Pro] {
+            let got = ids(BIG, Some(model));
             assert_eq!(
-                got.contains(&id),
-                DeviceModel::Pro.has_key(id),
-                "drawn keys and has_key disagree on {id:?}"
+                got.len(),
+                28,
+                "{model:?}: 20 grid + 4 wheel column + 4 thumb directions"
             );
+            let mut sorted = got.clone();
+            sorted.sort();
+            sorted.dedup();
+            assert_eq!(sorted.len(), got.len(), "{model:?}: no key twice");
+            for id in [KeyId::ThumbN, KeyId::ThumbE, KeyId::ThumbS, KeyId::ThumbW] {
+                assert!(got.contains(&id), "{model:?} missing {id:?}");
+            }
+            for id in KeyId::ALL {
+                assert_eq!(
+                    got.contains(&id),
+                    model.has_key(id),
+                    "{model:?}: drawn keys and has_key disagree on {id:?}"
+                );
+            }
         }
     }
 

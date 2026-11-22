@@ -44,6 +44,16 @@ You can make your own profiles. "+ New profile" at the bottom of the list copies
 
 The first time you apply a shipped profile the app copies it into `~/.config/opentartarus/profiles/`. Edits go to that copy. A copy you have never edited follows the app: when a new version ships a better layout for that game, your copy is replaced with it. The moment you change one key, the copy becomes yours and the app stops touching it. "Revert to shipped" throws your changes away and puts it back under the app's care.
 
+## Tartarus V2
+
+The V2 has 20 keys in rows of 5, 5, 5 and 4, a thumb key under them, a scroll wheel that clicks, and an eight-way thumb pad. The window draws that layout and numbers the keys 01 to 20 along the rows.
+
+On its own the pad sends the left of a keyboard: 1 to 5 on the top row, Tab Q W E R under that, Caps A S D F on the rest row, Shift Z X C at the bottom, and Space on the thumb key. The wheel steps and its click use their own slots. With nothing bound, the mode button next to the wheel still sends the left Alt the pad sends.
+
+The thumb pad sends the four arrow keys, so OpenTartarus binds it as four directions: north, east, south and west. The pad sends no diagonal of its own. Push a corner and it holds two directions at once, so a profile that binds all four gets the diagonal without a binding for it. This was recorded from a real V2 (`1532:022b`, hardware revision `0200`) with nothing else grabbing the pad.
+
+Another remapper that grabs keyboards, such as keyd or input-remapper, takes the V2's key nodes for itself. OpenTartarus then sees no presses from the pad. Stop the other remapper, or leave the keypad out of its configuration.
+
 ## Tartarus Pro
 
 The Pro has 20 keys in rows of 5, 5, 5 and 4, a thumb space key under them, a scroll wheel that clicks, and a stick that does not click. The window draws that layout and numbers the keys 01 to 20 along the rows.

@@ -516,7 +516,7 @@ mod tests {
     }
 
     #[test]
-    fn v2_drops_analog_keeps_thumb_pro_keeps_the_sticks_four_directions() {
+    fn v2_and_pro_drop_analog_and_keep_only_four_thumb_directions() {
         let mut p: Profile = serde_json::from_str(lol_json()).unwrap();
         p.bindings.insert(
             KeyId::AnalogUp,
@@ -539,14 +539,17 @@ mod tests {
                 modifiers: vec![],
             },
         );
-        let v2 = p.bindings_for_model(DeviceModel::V2);
-        assert!(v2.contains_key(&KeyId::ThumbN));
-        assert!(v2.contains_key(&KeyId::ThumbNe));
-        assert!(!v2.contains_key(&KeyId::AnalogUp));
-        let pro = p.bindings_for_model(DeviceModel::Pro);
-        assert!(pro.contains_key(&KeyId::ThumbN));
-        assert!(!pro.contains_key(&KeyId::ThumbNe), "no diagonals");
-        assert!(!pro.contains_key(&KeyId::AnalogUp));
+        // A saved profile may still carry a diagonal from an older build.
+        // Neither pad sends one, so both models drop it.
+        for model in [DeviceModel::V2, DeviceModel::Pro] {
+            let kept = p.bindings_for_model(model);
+            assert!(kept.contains_key(&KeyId::ThumbN), "{model:?}");
+            assert!(
+                !kept.contains_key(&KeyId::ThumbNe),
+                "{model:?} has no diagonals"
+            );
+            assert!(!kept.contains_key(&KeyId::AnalogUp), "{model:?}");
+        }
     }
 
     #[test]

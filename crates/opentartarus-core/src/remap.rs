@@ -3,9 +3,9 @@ use crate::constants::{
     USB_VID_RAZER,
 };
 use crate::keymap::{
-    analog_axis_ratio, decode_hat, modifier_to_evdev, mouse_button_to_evdev, token_to_evdev,
-    KeyMap, ABS_HAT0X, ABS_HAT0Y, ABS_RX, ABS_RY, ABS_X, ABS_Y, BTN_THUMBL, BTN_THUMBR, EV_ABS,
-    EV_KEY, EV_REL, GAMEPAD_AXIS_CENTER, GAMEPAD_AXIS_MAX, REL_WHEEL,
+    analog_axis_ratio, modifier_to_evdev, mouse_button_to_evdev, token_to_evdev, KeyMap, ABS_HAT0X,
+    ABS_HAT0Y, ABS_RX, ABS_RY, ABS_X, ABS_Y, BTN_THUMBL, BTN_THUMBR, EV_ABS, EV_KEY, EV_REL,
+    GAMEPAD_AXIS_CENTER, GAMEPAD_AXIS_MAX, REL_WHEEL,
 };
 use crate::types::{
     Action, DeviceModel, Edge, KeyId, MacroKind, MacroStep, MouseTarget, Profile, ProfileSwitch,
@@ -77,9 +77,6 @@ pub struct RemapEngine {
     macro_play: Option<MacroPlay>,
     hold: Option<(KeyId, u64, u32)>,
     profile_switch: Option<ProfileSwitch>,
-    hat_x: i32,
-    hat_y: i32,
-    hat_dir: Option<KeyId>,
     analog_x: i32,
     analog_y: i32,
     analog_left: bool,
@@ -134,9 +131,6 @@ impl RemapEngine {
             macro_play: None,
             hold: None,
             profile_switch: None,
-            hat_x: 0,
-            hat_y: 0,
-            hat_dir: None,
             analog_x: GAMEPAD_AXIS_CENTER,
             analog_y: GAMEPAD_AXIS_CENTER,
             analog_left: false,
@@ -318,10 +312,6 @@ impl RemapEngine {
             self.handle_v2_pro_stick(ev, sink, clock);
             return;
         }
-        if ev.ev_type == EV_ABS && (ev.code == ABS_HAT0X || ev.code == ABS_HAT0Y) {
-            self.handle_hat(ev, sink, clock);
-            return;
-        }
         if ev.ev_type == EV_ABS && (ev.code == ABS_X || ev.code == ABS_Y) {
             self.handle_analog(ev, sink, clock);
             return;
@@ -366,25 +356,6 @@ impl RemapEngine {
             _ => return,
         };
         self.handle_analog(RawEvent { code, value, ..ev }, sink, clock);
-    }
-
-    fn handle_hat(&mut self, ev: RawEvent, sink: &mut impl EventSink, clock: &mut impl Clock) {
-        if ev.code == ABS_HAT0X {
-            self.hat_x = ev.value;
-        } else {
-            self.hat_y = ev.value;
-        }
-        let next = decode_hat(self.hat_x, self.hat_y);
-        if next == self.hat_dir {
-            return;
-        }
-        if let Some(prev) = self.hat_dir {
-            self.dispatch(prev, KEY_UP, ev, sink, clock);
-        }
-        self.hat_dir = next;
-        if let Some(id) = next {
-            self.dispatch(id, KEY_DOWN, ev, sink, clock);
-        }
     }
 
     fn handle_analog(&mut self, ev: RawEvent, sink: &mut impl EventSink, clock: &mut impl Clock) {
@@ -978,6 +949,10 @@ mod tests {
     }
 
     fn profile_with(model: DeviceModel, id: KeyId, action: Action) -> RemapEngine {
+        profile_with_bindings(model, vec![(id, action)])
+    }
+
+    fn profile_with_bindings(model: DeviceModel, binds: Vec<(KeyId, Action)>) -> RemapEngine {
         let mut p = Profile {
             id: "t".into(),
             name: "t".into(),
@@ -995,72 +970,67 @@ mod tests {
             setup_note: None,
             shipped_revision: None,
         };
-        p.bindings.insert(id, action);
+        for (id, action) in binds {
+            p.bindings.insert(id, action);
+        }
         let mut e = RemapEngine::new(model);
         e.apply_profile(&p);
         e
     }
 
     #[test]
-    fn thumb_hat_eight_way_is_first_class() {
-        let mut e = profile_with(
+    fn the_v2_thumb_pad_arrives_as_arrow_keys_two_at_a_time() {
+        // A real V2 (1532:022b) sends its thumb pad as the four arrow keys
+        // on its extra-keys node, not as a hat. A corner push holds two of
+        // them at once, so both bound directions fire.
+        let key = |token: KeyToken| Action::Key {
+            key: token,
+            modifiers: vec![],
+        };
+        let mut e = profile_with_bindings(
             DeviceModel::V2,
-            KeyId::ThumbNe,
-            Action::Key {
-                key: KeyToken::W,
-                modifiers: vec![],
-            },
+            vec![
+                (KeyId::ThumbN, key(KeyToken::W)),
+                (KeyId::ThumbW, key(KeyToken::A)),
+            ],
         );
         let mut s = FakeSink(vec![]);
         let mut c = FakeClock { t: 0 };
         let w = crate::keymap::token_to_evdev(KeyToken::W);
-        e.handle(
-            RawEvent {
-                vid: USB_VID_RAZER,
-                pid: USB_PID_TARTARUS_V2,
-                ev_type: 3,
-                code: 16,
-                value: 1,
-            },
-            &mut s,
-            &mut c,
-        );
-        e.handle(
-            RawEvent {
-                vid: USB_VID_RAZER,
-                pid: USB_PID_TARTARUS_V2,
-                ev_type: 3,
-                code: 17,
-                value: -1,
-            },
-            &mut s,
-            &mut c,
-        );
+        let a = crate::keymap::token_to_evdev(KeyToken::A);
+        let arrow = |code: u16, value: i32| RawEvent {
+            vid: USB_VID_RAZER,
+            pid: USB_PID_TARTARUS_V2,
+            ev_type: 1,
+            code,
+            value,
+        };
+        let up = crate::keymap::token_to_evdev(KeyToken::Up);
+        let left = crate::keymap::token_to_evdev(KeyToken::Left);
+
+        // North-west: up and left are held together.
+        e.handle(arrow(up, 1), &mut s, &mut c);
+        e.handle(arrow(left, 1), &mut s, &mut c);
         assert!(s.0.iter().any(|x| x.code == w && x.value == 1));
+        assert!(s.0.iter().any(|x| x.code == a && x.value == 1));
+
+        // The pad repeats while a direction is held. A repeat must not
+        // press the binding again.
         s.0.clear();
-        e.handle(
-            RawEvent {
-                vid: USB_VID_RAZER,
-                pid: USB_PID_TARTARUS_V2,
-                ev_type: 3,
-                code: 16,
-                value: 0,
-            },
-            &mut s,
-            &mut c,
-        );
-        e.handle(
-            RawEvent {
-                vid: USB_VID_RAZER,
-                pid: USB_PID_TARTARUS_V2,
-                ev_type: 3,
-                code: 17,
-                value: 0,
-            },
-            &mut s,
-            &mut c,
-        );
+        e.handle(arrow(up, 2), &mut s, &mut c);
+        assert!(s.0.is_empty(), "a pad repeat plays nothing");
+
+        // Letting go of both releases both.
+        e.handle(arrow(up, 0), &mut s, &mut c);
+        e.handle(arrow(left, 0), &mut s, &mut c);
         assert!(s.0.iter().any(|x| x.code == w && x.value == 0));
+        assert!(s.0.iter().any(|x| x.code == a && x.value == 0));
+
+        // An unbound direction is swallowed, not leaked as its arrow key.
+        s.0.clear();
+        let right = crate::keymap::token_to_evdev(KeyToken::Right);
+        e.handle(arrow(right, 1), &mut s, &mut c);
+        assert!(s.0.is_empty(), "an unbound direction leaks nothing");
     }
 
     #[test]

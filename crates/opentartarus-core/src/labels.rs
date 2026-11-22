@@ -174,7 +174,7 @@ pub fn key_position_text_for(model: Option<DeviceModel>, id: KeyId) -> String {
             return String::from(POSITION_THUMBSTICK);
         }
     }
-    if model == Some(DeviceModel::Pro) && id.is_pro_stick_direction() {
+    if model == Some(DeviceModel::Pro) && id.is_cardinal_thumb() {
         return String::from(POSITION_THUMBSTICK);
     }
     key_position_text(id)

@@ -17,8 +17,8 @@ pub const ABS_HAT0Y: u16 = 17;
 
 /// The V2 Pro's thumbstick is the only stick axis any shipped pad reports:
 /// a gamepad (xpad) stick, -32768..=32767 around 0, up and left negative.
-/// The V2's thumb pad is an 8-way hat and the Pro's stick sends four plain
-/// key codes, so neither reaches the axis path.
+/// The V2's thumb pad and the Pro's stick both send four plain key codes,
+/// so neither reaches the axis path.
 pub const GAMEPAD_AXIS_CENTER: i32 = 0;
 pub const GAMEPAD_AXIS_MAX: i32 = 32767;
 
@@ -128,7 +128,6 @@ const KEY_VOLUMEUP: u16 = 115;
 const KEY_PAUSE: u16 = 119;
 const KEY_LEFTMETA: u16 = 125;
 const KEY_RIGHTMETA: u16 = 126;
-const KEY_F24: u16 = 194;
 /// The gamepad's left-stick click. The V2 Pro's thumbstick click sends it.
 pub const BTN_THUMBL: u16 = 317;
 pub const BTN_THUMBR: u16 = 318;
@@ -142,35 +141,6 @@ pub const BTN_EXTRA: u16 = 276;
 const WHEEL_UP: i32 = 1;
 const WHEEL_DOWN: i32 = -1;
 const KEY_PRESS_QUALIFIER: i32 = 1;
-
-/// What the Tartarus V2 sends on its own, with no software running.
-/// Qualifier is applied in [`KeyMap`]: press `1` for keys, `+1`/`-1` for wheel.
-const V2_KEYS: &[(KeyId, u16, u16)] = &[
-    (KeyId::Kp01, EV_KEY, KEY_1),
-    (KeyId::Kp02, EV_KEY, KEY_2),
-    (KeyId::Kp03, EV_KEY, KEY_3),
-    (KeyId::Kp04, EV_KEY, KEY_4),
-    (KeyId::Kp05, EV_KEY, KEY_5),
-    (KeyId::Kp06, EV_KEY, KEY_6),
-    (KeyId::Kp07, EV_KEY, KEY_7),
-    (KeyId::Kp08, EV_KEY, KEY_8),
-    (KeyId::Kp09, EV_KEY, KEY_9),
-    (KeyId::Kp10, EV_KEY, KEY_0),
-    (KeyId::Kp11, EV_KEY, KEY_Q),
-    (KeyId::Kp12, EV_KEY, KEY_W),
-    (KeyId::Kp13, EV_KEY, KEY_E),
-    (KeyId::Kp14, EV_KEY, KEY_R),
-    (KeyId::Kp15, EV_KEY, KEY_T),
-    (KeyId::Kp16, EV_KEY, KEY_Y),
-    (KeyId::Kp17, EV_KEY, KEY_U),
-    (KeyId::Kp18, EV_KEY, KEY_I),
-    (KeyId::Kp19, EV_KEY, KEY_O),
-    (KeyId::Kp20, EV_KEY, KEY_P),
-    (KeyId::WheelUp, EV_REL, REL_WHEEL),
-    (KeyId::WheelDown, EV_REL, REL_WHEEL),
-    (KeyId::WheelClick, EV_KEY, BTN_MIDDLE),
-    (KeyId::Mode, EV_KEY, KEY_F24),
-];
 
 /// What the Tartarus V2 Pro sends on its own, with no software running:
 /// the left of a keyboard. Each key is given the `KeyId` of the V2 key that
@@ -209,14 +179,25 @@ const V2_PRO_KEYS: &[(KeyId, u16, u16)] = &[
     (KeyId::StickClick, EV_KEY, BTN_THUMBR),
 ];
 
-/// What the Tartarus Pro sends on its own, with no software running:
-/// the left of a keyboard, one key wider than the V2 Pro's rows. Recorded
-/// from a real Pro (1532:0244): the 20 keys and the thumb space on the
-/// keyboard node, the wheel on the mouse node, and the stick's four
+/// What the Tartarus V2 and the Tartarus Pro send on their own, with no
+/// software running: the left of a keyboard, one key wider than the V2 Pro's
+/// rows. The two pads send the same codes, so they share one table.
+///
+/// Recorded from a real Pro (1532:0244): the 20 keys and the thumb space on
+/// the keyboard node, the wheel on the mouse node, and the stick's four
 /// directions and the mode button as arrow keys and left alt on the boot
-/// keyboard node. The stick holds two of the four codes at once on a
-/// diagonal, exactly like the V2's thumb pad does through the hat axes.
-const PRO_KEYS: &[(KeyId, u16, u16)] = &[
+/// keyboard node.
+///
+/// Recorded from a real V2 (1532:022b, bcdDevice 0200): the 20 keys, the
+/// thumb pad's four directions and the mode button on the extra-keys node,
+/// the wheel on the mouse node. Its boot keyboard node sends no keys at all.
+///
+/// Neither pad sends a diagonal of its own: a corner push holds two of the
+/// four directions at once. Neither sends a hat or an axis.
+///
+/// Qualifier is applied in [`KeyMap`]: press `1` for keys, `+1`/`-1` for
+/// wheel.
+const V2_AND_PRO_KEYS: &[(KeyId, u16, u16)] = &[
     (KeyId::Kp01, EV_KEY, KEY_1),
     (KeyId::Kp02, EV_KEY, KEY_2),
     (KeyId::Kp03, EV_KEY, KEY_3),
@@ -260,12 +241,9 @@ pub struct KeyMap {
 }
 
 impl KeyMap {
-    pub fn v2() -> Self {
-        Self::from_table(V2_KEYS)
-    }
-
-    pub fn pro() -> Self {
-        Self::from_table(PRO_KEYS)
+    /// The V2 and the Pro send the same codes, so one map serves both.
+    pub fn v2_and_pro() -> Self {
+        Self::from_table(V2_AND_PRO_KEYS)
     }
 
     pub fn v2_pro() -> Self {
@@ -274,8 +252,7 @@ impl KeyMap {
 
     pub fn for_model(model: DeviceModel) -> Self {
         match model {
-            DeviceModel::V2 => Self::v2(),
-            DeviceModel::Pro => Self::pro(),
+            DeviceModel::V2 | DeviceModel::Pro => Self::v2_and_pro(),
             DeviceModel::V2Pro => Self::v2_pro(),
         }
     }
@@ -441,20 +418,6 @@ pub fn mouse_button_to_evdev(button: MouseButton) -> u16 {
     }
 }
 
-pub fn decode_hat(hat_x: i32, hat_y: i32) -> Option<KeyId> {
-    match (hat_x.signum(), hat_y.signum()) {
-        (0, -1) => Some(KeyId::ThumbN),
-        (1, -1) => Some(KeyId::ThumbNe),
-        (1, 0) => Some(KeyId::ThumbE),
-        (1, 1) => Some(KeyId::ThumbSe),
-        (0, 1) => Some(KeyId::ThumbS),
-        (-1, 1) => Some(KeyId::ThumbSw),
-        (-1, 0) => Some(KeyId::ThumbW),
-        (-1, -1) => Some(KeyId::ThumbNw),
-        _ => None,
-    }
-}
-
 /// How far the stick is pushed, from -1.0 to 1.0. Negative is up or left.
 pub fn analog_axis_ratio(value: i32) -> f32 {
     let travel = (GAMEPAD_AXIS_MAX - GAMEPAD_AXIS_CENTER) as f32;
@@ -477,31 +440,35 @@ mod tests {
     }
 
     #[test]
-    fn v2_fixture_kp01_kp02_and_model_coverage() {
-        let v2 = KeyMap::v2();
+    fn the_v2_and_the_pro_share_one_map_and_cover_both_models() {
+        let map = KeyMap::v2_and_pro();
         assert_eq!(
-            v2.resolve(EvdevTuple {
+            map.resolve(EvdevTuple {
                 ev_type: 1,
                 code: 2,
                 qualifier: 1
             }),
             Some(KeyId::Kp01)
         );
-        assert_eq!(v2.get(1, 2, 1), Some(KeyId::Kp01));
-        assert_eq!(v2.get(1, 3, 1), Some(KeyId::Kp02));
+        assert_eq!(map.get(1, 2, 1), Some(KeyId::Kp01));
+        assert_eq!(map.get(1, 3, 1), Some(KeyId::Kp02));
         for id in keypad_and_wheel_mode() {
-            assert!(v2.contains(id), "V2 map missing {id:?}");
+            assert!(map.contains(id), "map missing {id:?}");
         }
-        let pro = KeyMap::pro();
-        for id in keypad_and_wheel_mode() {
-            assert!(pro.contains(id), "Pro map missing {id:?}");
+        // Both pads send four plain directions; their diagonals never fire.
+        assert!(map.contains(KeyId::ThumbN) && map.contains(KeyId::ThumbW));
+        assert!(!map.contains(KeyId::ThumbNe));
+        assert!(!map.contains(KeyId::AnalogUp));
+        for model in [DeviceModel::V2, DeviceModel::Pro] {
+            assert_eq!(KeyMap::for_model(model).inner, map.inner);
+            for id in KeyId::ALL {
+                assert_eq!(
+                    map.contains(id),
+                    model.has_key(id),
+                    "{model:?} map and has_key disagree on {id:?}"
+                );
+            }
         }
-        assert!(!v2.contains(KeyId::ThumbN));
-        assert!(!v2.contains(KeyId::AnalogUp));
-        // The Pro's stick is four plain directions; its diagonals never fire.
-        assert!(pro.contains(KeyId::ThumbN) && pro.contains(KeyId::ThumbW));
-        assert!(!pro.contains(KeyId::ThumbNe));
-        assert!(!pro.contains(KeyId::AnalogUp));
     }
 
     #[test]
@@ -566,10 +533,12 @@ mod tests {
     }
 
     #[test]
-    fn pro_fixture_matches_what_the_pad_sends() {
-        let map = KeyMap::pro();
-        // Recorded from a real Tartarus Pro (1532:0244), row by row. The
-        // thumb space key sits below the rows on the physical pad.
+    fn v2_and_pro_fixture_matches_what_the_pads_send() {
+        let map = KeyMap::v2_and_pro();
+        // Recorded row by row from a real Tartarus Pro (1532:0244) and from
+        // a real Tartarus V2 (1532:022b, bcdDevice 0200). Both pads send
+        // these same codes. The thumb space key sits below the rows on the
+        // physical pad.
         let rows: [&[(u16, KeyId)]; 5] = [
             &[
                 (KEY_1, KeyId::Kp01),
@@ -609,19 +578,15 @@ mod tests {
         assert_eq!(map.get(EV_REL, REL_WHEEL, 1), Some(KeyId::WheelUp));
         assert_eq!(map.get(EV_REL, REL_WHEEL, -1), Some(KeyId::WheelDown));
         assert_eq!(map.get(EV_KEY, BTN_MIDDLE, 1), Some(KeyId::WheelClick));
-        // The mode button and the stick on the boot keyboard node.
+        // The mode button, and the four directions of the Pro's stick and
+        // of the V2's thumb pad. The Pro sends both on its boot keyboard
+        // node, the V2 on its extra-keys node, so the codes are what the
+        // map keys on.
         assert_eq!(map.get(EV_KEY, KEY_LEFTALT, 1), Some(KeyId::Mode));
         assert_eq!(map.get(EV_KEY, KEY_UP, 1), Some(KeyId::ThumbN));
         assert_eq!(map.get(EV_KEY, KEY_RIGHT, 1), Some(KeyId::ThumbE));
         assert_eq!(map.get(EV_KEY, KEY_DOWN, 1), Some(KeyId::ThumbS));
         assert_eq!(map.get(EV_KEY, KEY_LEFT, 1), Some(KeyId::ThumbW));
-        for id in KeyId::ALL {
-            assert_eq!(
-                map.contains(id),
-                DeviceModel::Pro.has_key(id),
-                "Pro map and has_key disagree on {id:?}"
-            );
-        }
     }
 
     #[test]
