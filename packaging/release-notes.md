@@ -2,35 +2,15 @@ OpenTartarus is a Linux app for the Razer Tartarus V2, Tartarus Pro and Tartarus
 
 This is a test build. It works with a Tartarus V2 and a Tartarus V2 Pro on Wayland, and a contributor reports it working with a Tartarus Pro. It has not been through many distros. If something does not work, please say so, and say which pad and which distro you have. CONTRIBUTING.md lists the rest of what helps.
 
-## What changed in 0.2.1
+## What changed in 0.2.2
 
-### One daemon, one tray icon
+Sorry for the quick turnaround. This is a hot fix on top of 0.2.1.
 
-Opening the app from the tray could start a second copy of it, and most of the time it did. There were two reasons. A machine can have more than one thing set to start the daemon at login, and when two started in the same moment they both saw a socket with nobody on it, both deleted it and both bound one of their own. Each then had a tray icon, and the one you clicked was not always the one holding the keypad.
+"Record a key" now picks up Caps Lock, along with Num Lock, Scroll Lock, Print Screen, Pause and the three volume keys. The numpad records as the numpad, so numpad 1 stays numpad 1 instead of arriving as the 1 on the top row. Keycaps read the symbol too, so a key bound to `-` shows `-` and not `Minus`.
 
-The daemon now takes an exclusive lock before it touches the socket at all. The first one to get it does the work. Any other finds it held, says so in the log and stops with a success code, so nothing tries to start it again. Ten daemons started at the same moment leave exactly one running.
+The app also asks GitHub once, when the window opens, whether a newer version is out, and shows a line under the header if there is one. The request carries the program name and version and nothing else, and a check that fails says nothing at all. To make no request, set `OPENTARTARUS_NO_UPDATE_CHECK=1`.
 
-Thanks to BerosCerberus for the report, and to colincci for confirming it on a second machine (#4).
-
-### Profiles
-
-Any profile can be renamed now, the shipped ones included: select it in the list and press "Rename". Renaming a shipped profile counts as an edit, so that copy stops following the app, and "Revert to shipped" puts its own name back along with the rest of it.
-
-The tray menu's "Profiles" list used to show only the profiles that ship with the app. It now shows yours as well, under the names you gave them.
-
-### The Tartarus V2 key map
-
-The Tartarus V2 key map was wrong. Fifteen of its twenty keys pointed at the wrong slot, so a profile's bindings landed on keys you did not pick. The thumb pad was read as a joystick hat, which the V2 does not have, so the thumb pad did nothing. The mode button was read as F24, which the pad does not send either.
-
-The map is now recorded from a real V2 (`1532:022b`, hardware revision `0200`) with nothing else holding the pad: all 20 keys, the wheel, the thumb pad and the mode button. The V2 turns out to send the same codes as the Tartarus Pro, so the two pads now share one map.
-
-The thumb pad is four directions, not eight. Push a corner and the pad holds two directions at once, so a profile that binds all four still gets the corners. A binding saved on a diagonal is dropped, because no V2 ever sent one.
-
-If you made a profile on a V2 before this, its keys now land where you meant them to.
-
-Thanks to colincci, who reported it in #5 and checked three pads.
-
-One thing to watch: another remapper that grabs keyboards, such as keyd or input-remapper, takes the V2's key nodes for itself, and OpenTartarus then sees no presses from the pad. Stop the other remapper, or leave the keypad out of its configuration.
+Thanks to colincci for the report (#7).
 
 ## What it does
 
