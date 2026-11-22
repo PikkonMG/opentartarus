@@ -15,14 +15,11 @@ pub const ABS_RY: u16 = 4;
 pub const ABS_HAT0X: u16 = 16;
 pub const ABS_HAT0Y: u16 = 17;
 
-/// No shipped pad but the V2 Pro reports stick axes. The V2's thumb pad is
-/// an 8-way hat and the Pro's stick sends four plain key codes, so this
-/// only inits the engine's unused axis state on those pads.
-const ANALOG_AXIS_CENTER: i32 = 128;
-const ANALOG_AXIS_MAX: i32 = 255;
-/// The Tartarus V2 Pro's thumbstick is a gamepad (xpad) stick: -32768..=32767
-/// around 0, with up and left negative.
-const GAMEPAD_AXIS_CENTER: i32 = 0;
+/// The V2 Pro's thumbstick is the only stick axis any shipped pad reports:
+/// a gamepad (xpad) stick, -32768..=32767 around 0, up and left negative.
+/// The V2's thumb pad is an 8-way hat and the Pro's stick sends four plain
+/// key codes, so neither reaches the axis path.
+pub const GAMEPAD_AXIS_CENTER: i32 = 0;
 pub const GAMEPAD_AXIS_MAX: i32 = 32767;
 
 const KEY_ESC: u16 = 1;
@@ -80,8 +77,8 @@ const KEY_DOT: u16 = 52;
 const KEY_SLASH: u16 = 53;
 const KEY_RIGHTSHIFT: u16 = 54;
 const KEY_KPASTERISK: u16 = 55;
-const KEY_SPACE: u16 = 57;
 const KEY_LEFTALT: u16 = 56;
+const KEY_SPACE: u16 = 57;
 const KEY_CAPSLOCK: u16 = 58;
 const KEY_F1: u16 = 59;
 const KEY_F2: u16 = 60;
@@ -458,28 +455,10 @@ pub fn decode_hat(hat_x: i32, hat_y: i32) -> Option<KeyId> {
     }
 }
 
+/// How far the stick is pushed, from -1.0 to 1.0. Negative is up or left.
 pub fn analog_axis_ratio(value: i32) -> f32 {
-    let travel = (ANALOG_AXIS_MAX - ANALOG_AXIS_CENTER) as f32;
-    (value - ANALOG_AXIS_CENTER) as f32 / travel
-}
-
-/// The resting value of a model's stick axes.
-pub fn analog_axis_center(model: DeviceModel) -> i32 {
-    match model {
-        DeviceModel::V2Pro => GAMEPAD_AXIS_CENTER,
-        DeviceModel::V2 | DeviceModel::Pro => ANALOG_AXIS_CENTER,
-    }
-}
-
-/// How far a model's stick is pushed, from -1.0 to 1.0. Negative is up or left.
-pub fn analog_axis_ratio_for(model: DeviceModel, value: i32) -> f32 {
-    match model {
-        DeviceModel::V2Pro => {
-            let travel = (GAMEPAD_AXIS_MAX - GAMEPAD_AXIS_CENTER) as f32;
-            ((value - GAMEPAD_AXIS_CENTER) as f32 / travel).clamp(-1.0, 1.0)
-        }
-        DeviceModel::V2 | DeviceModel::Pro => analog_axis_ratio(value),
-    }
+    let travel = (GAMEPAD_AXIS_MAX - GAMEPAD_AXIS_CENTER) as f32;
+    ((value - GAMEPAD_AXIS_CENTER) as f32 / travel).clamp(-1.0, 1.0)
 }
 
 #[cfg(test)]
@@ -647,9 +626,9 @@ mod tests {
 
     #[test]
     fn gamepad_stick_ratio_is_centred_on_zero() {
-        assert_eq!(analog_axis_ratio_for(DeviceModel::V2Pro, 0), 0.0);
-        assert!((analog_axis_ratio_for(DeviceModel::V2Pro, 32767) - 1.0).abs() < 1e-6);
-        assert!(analog_axis_ratio_for(DeviceModel::V2Pro, -32768) <= -1.0);
+        assert_eq!(analog_axis_ratio(GAMEPAD_AXIS_CENTER), 0.0);
+        assert!((analog_axis_ratio(GAMEPAD_AXIS_MAX) - 1.0).abs() < 1e-6);
+        assert_eq!(analog_axis_ratio(-GAMEPAD_AXIS_MAX - 1), -1.0, "clamped");
     }
 
     fn keypad_and_wheel_mode() -> [KeyId; 24] {
