@@ -188,9 +188,11 @@ const V2_PRO_KEYS: &[(KeyId, u16, u16)] = &[
 /// directions and the mode button as arrow keys and left alt on the boot
 /// keyboard node.
 ///
-/// Recorded from a real V2 (1532:022b, bcdDevice 0200): the 20 keys, the
-/// thumb pad's four directions and the mode button on the extra-keys node,
-/// the wheel on the mouse node. Its boot keyboard node sends no keys at all.
+/// Recorded from a real V2 (1532:022b, bcdDevice 0200) in driver mode, the
+/// mode OpenRazer sets: the 20 keys, the thumb pad's four directions and the
+/// mode button on the extra-keys node, the wheel on the mouse node, and no
+/// keys at all on the boot keyboard node. In normal device mode the keys
+/// arrive on the boot keyboard node instead.
 ///
 /// Neither pad sends a diagonal of its own: a corner push holds two of the
 /// four directions at once. Neither sends a hat or an axis.

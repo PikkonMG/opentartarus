@@ -3,18 +3,17 @@ use opentartarus_core::error::ErrorCode;
 use opentartarus_core::ipc::{EventMethod, Method};
 use opentartarus_core::keymap::{mouse_button_to_evdev, EV_KEY, EV_REL, REL_WHEEL};
 use opentartarus_core::lighting::LightingClient;
-use opentartarus_core::pack::SHIPPED_IDS;
 use opentartarus_core::paths::Paths;
 use opentartarus_core::record::RecordReason;
 use opentartarus_core::remap::{Clock, RawEvent, RemapEngine};
-use opentartarus_core::store::{read_active_id, read_stick_rotation};
+use opentartarus_core::store::read_stick_rotation;
 use opentartarus_core::types::{DeviceModel, MouseButton, ScrollDir};
 use opentartarus_daemon::device::{
     busy_decision, classify_device_io, detect_status, device_ui_state, enumerate_tartarus,
-    grab_conflict_status_value, grab_targets, lookup_event_holders, pick_first, scan_interval_ms,
+    grab_conflict_status_value, lookup_event_holders, pick_first, scan_interval_ms,
     snapshot_changed, BusyDecision, DetectStatus, Detected, DeviceIoKind, DeviceUiState,
 };
-use opentartarus_daemon::handler::{handle_request, DaemonState};
+use opentartarus_daemon::handler::{handle_request, restore_active_profile, DaemonState};
 use opentartarus_daemon::perms::{probe_evdev_readable, probe_uinput};
 use opentartarus_daemon::playback::{
     commit_if_engine_replaced, remap_physical_event, tick_engine, EngineEpoch,
@@ -33,6 +32,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::signal::unix::{signal, Signal, SignalKind};
 use tokio::sync::broadcast;
 
 const POLL_INTERVAL_MS: u64 = 250;
@@ -178,15 +178,8 @@ async fn run() -> Result<(), ErrorCode> {
     };
     state.engine.set_stick_rotation(state.stick_rotation_deg);
 
-    if let Ok(Some(id)) = read_active_id(&paths) {
-        if SHIPPED_IDS.contains(&id.as_str()) {
-            let _ = handle_request(
-                &mut state,
-                Method::ApplyProfile,
-                json!({ "id": id }),
-                now_ms(),
-            );
-        }
+    if let Err(code) = restore_active_profile(&mut state) {
+        log::write(&code.log_line(None));
     }
 
     let (tray_profile_rows, profile_name) = tray_state(&mut state);
@@ -233,6 +226,10 @@ async fn run() -> Result<(), ErrorCode> {
         });
     }
 
+    let mut terminate = signal(SignalKind::terminate()).map_err(|err| {
+        log::write(&ErrorCode::Io.log_line(Some(&err.to_string())));
+        ErrorCode::Io
+    })?;
     let mut ui = UiSupervisor::new();
     loop {
         tokio::select! {
@@ -317,7 +314,7 @@ async fn run() -> Result<(), ErrorCode> {
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
-            _ = tokio::signal::ctrl_c() => {
+            _ = stop_requested(&mut terminate) => {
                 request_quit(&state, &event_tx, &quit);
                 break;
             }
@@ -335,6 +332,15 @@ async fn run() -> Result<(), ErrorCode> {
     }
     let _ = std::fs::remove_file(&paths.socket);
     Ok(())
+}
+
+/// Resolves on Ctrl+C, or on the stop signal a service manager sends, so
+/// both ends of a session leave the window told and the socket removed.
+async fn stop_requested(terminate: &mut Signal) {
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = terminate.recv() => {}
+    }
 }
 
 fn request_quit<L: LightingClient>(
@@ -371,45 +377,43 @@ fn device_loop(
             let detected = pick_first(enumerate_tartarus());
             let status = detect_status(detected.as_ref(), probe_evdev_readable);
             match (status, detected) {
-                (DetectStatus::Present, Some(detected)) => {
-                    match grab_nodes(grab_targets(&detected)) {
-                        Ok(devices) => {
-                            grabbed = devices;
-                            grabbed_ids = Some((detected.vid, detected.pid, detected.model));
-                            grabbed_nodes = grab_targets(&detected).to_vec();
-                            gamepad_idx = grabbed_nodes
-                                .iter()
-                                .enumerate()
-                                .filter(|(_, path)| detected.gamepad_nodes.contains(path))
-                                .map(|(index, _)| index)
-                                .collect();
-                            gamepad_held = true;
-                            last_ui = Some(device_ui_state(
-                                DetectStatus::Present,
-                                Some(detected.model),
-                                false,
-                            ));
-                            on_device_appeared(&state, &detected, &events, &epoch);
-                        }
-                        Err(fail) => {
-                            let grab_conflict = fail.code == ErrorCode::GrabConflict;
-                            let next = device_ui_state(
-                                DetectStatus::Present,
-                                Some(detected.model),
-                                grab_conflict,
-                            );
-                            publish_idle_detect(
-                                &state,
-                                &events,
-                                &mut last_ui,
-                                next,
-                                Some(detected.vid),
-                                Some(detected.pid),
-                                Some(fail),
-                            );
-                        }
+                (DetectStatus::Present, Some(detected)) => match grab_nodes(&detected.nodes) {
+                    Ok(devices) => {
+                        grabbed = devices;
+                        grabbed_ids = Some((detected.vid, detected.pid, detected.model));
+                        grabbed_nodes = detected.nodes.clone();
+                        gamepad_idx = grabbed_nodes
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, path)| detected.gamepad_nodes.contains(path))
+                            .map(|(index, _)| index)
+                            .collect();
+                        gamepad_held = true;
+                        last_ui = Some(device_ui_state(
+                            DetectStatus::Present,
+                            Some(detected.model),
+                            false,
+                        ));
+                        on_device_appeared(&state, &detected, &events, &epoch);
                     }
-                }
+                    Err(fail) => {
+                        let grab_conflict = fail.code == ErrorCode::GrabConflict;
+                        let next = device_ui_state(
+                            DetectStatus::Present,
+                            Some(detected.model),
+                            grab_conflict,
+                        );
+                        publish_idle_detect(
+                            &state,
+                            &events,
+                            &mut last_ui,
+                            next,
+                            Some(detected.vid),
+                            Some(detected.pid),
+                            Some(fail),
+                        );
+                    }
+                },
                 (DetectStatus::Permission, Some(detected)) => {
                     let next =
                         device_ui_state(DetectStatus::Permission, Some(detected.model), false);
@@ -446,7 +450,7 @@ fn device_loop(
         }
 
         if !grabbed_nodes.iter().all(|path| path.exists()) {
-            release_stick(&state, &sink, &epoch);
+            release_held_input(&state, &sink, &epoch);
             grabbed.clear();
             grabbed_ids = None;
             grabbed_nodes.clear();
@@ -486,7 +490,7 @@ fn device_loop(
             }
         }
         if disconnect {
-            release_stick(&state, &sink, &epoch);
+            release_held_input(&state, &sink, &epoch);
             grabbed.clear();
             grabbed_ids = None;
             grabbed_nodes.clear();
@@ -695,14 +699,14 @@ fn hold_gamepads(devices: &mut [evdev::Device], indexes: &[usize], hold: bool) -
     all_done
 }
 
-/// Lets go of the stick before the pad's engine is dropped, so an unplug
-/// leaves no key held and the virtual controller centred.
-fn release_stick(
+/// Lets go of every key and of the stick before the pad's engine is dropped,
+/// so an unplug leaves no key held and the virtual controller centred.
+fn release_held_input(
     state: &Mutex<DaemonState<DaemonLighting>>,
     sink: &Mutex<Option<UinputSink>>,
     epoch: &EngineEpoch,
 ) {
-    state.lock().expect("daemon state").engine.release_stick();
+    state.lock().expect("daemon state").engine.release_all();
     tick_remap(state, sink, epoch);
 }
 

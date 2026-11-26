@@ -38,9 +38,12 @@ pub struct Detected {
     pub model: DeviceModel,
     pub vid: u16,
     pub pid: u16,
+    /// Every evdev node of the pad. The daemon holds them all, because
+    /// which node carries the keys is not fixed. A V2 sends its keys on the
+    /// extra-keys node while OpenRazer keeps it in driver mode, and on the
+    /// boot keyboard in normal device mode.
     pub nodes: Vec<PathBuf>,
-    pub grab_nodes: Vec<PathBuf>,
-    /// The nodes in `grab_nodes` that are a gamepad (the V2 Pro's thumbstick).
+    /// The nodes in `nodes` that are a gamepad (the V2 Pro's thumbstick).
     /// The daemon holds these only while the profile binds the stick.
     pub gamepad_nodes: Vec<PathBuf>,
 }
@@ -107,14 +110,6 @@ pub fn classify_device_io(kind: DeviceIoKind, os: &str) -> ErrorCode {
                 ErrorCode::Permission
             }
         }
-    }
-}
-
-pub fn grab_targets(detected: &Detected) -> &[PathBuf] {
-    if detected.grab_nodes.is_empty() {
-        &detected.nodes
-    } else {
-        &detected.grab_nodes
     }
 }
 
@@ -277,7 +272,6 @@ pub fn hid_catalog_from_names(names: &[&str]) -> Vec<Detected> {
             vid,
             pid,
             nodes: Vec::new(),
-            grab_nodes: Vec::new(),
             gamepad_nodes: Vec::new(),
         });
     }
@@ -400,38 +394,16 @@ fn detected_from_entries(
 ) -> Detected {
     let nodes: Vec<PathBuf> = entries.iter().map(|(path, _)| path.clone()).collect();
     let gamepad_nodes: Vec<PathBuf> = entries
-        .iter()
-        .filter(|(_, role)| *role == NodeRole::Gamepad)
-        .map(|(path, _)| path.clone())
-        .collect();
-    let mut grab_nodes: Vec<PathBuf> = entries
         .into_iter()
-        .filter(|(_, role)| is_remap_node(model, *role))
+        .filter(|(_, role)| *role == NodeRole::Gamepad)
         .map(|(path, _)| path)
         .collect();
-    if grab_nodes.is_empty() {
-        grab_nodes = nodes.clone();
-    }
     Detected {
         model,
         vid,
         pid,
         nodes,
-        grab_nodes,
         gamepad_nodes,
-    }
-}
-
-/// Which nodes carry the presses the daemon remaps. The V2 sends its keys
-/// on the extra-keys node, and OpenRazer holds the boot keyboard. The Pro
-/// sends its keys on the extra-keys node and its wheel on the mouse node,
-/// but its stick and mode button on the boot keyboard, so it needs every
-/// node. The V2 Pro sends its keys on the boot keyboard and its stick on a
-/// gamepad node, so it needs every node too.
-fn is_remap_node(model: DeviceModel, role: NodeRole) -> bool {
-    match model {
-        DeviceModel::V2Pro | DeviceModel::Pro => true,
-        DeviceModel::V2 => matches!(role, NodeRole::ExtraKeys | NodeRole::Mouse),
     }
 }
 
@@ -573,7 +545,6 @@ H: Handlers=sysrq kbd event273
             vid: USB_VID_RAZER,
             pid: USB_PID_TARTARUS_V2,
             nodes: nodes.iter().map(PathBuf::from).collect(),
-            grab_nodes: Vec::new(),
             gamepad_nodes: Vec::new(),
         }
     }
@@ -599,7 +570,6 @@ H: Handlers=sysrq kbd event273
             vid: USB_VID_RAZER,
             pid: USB_PID_TARTARUS_PRO,
             nodes: vec![],
-            grab_nodes: vec![],
             gamepad_nodes: vec![],
         };
         let b = v2_detected(&[]);
@@ -651,9 +621,8 @@ B: LED=7
             .iter()
             .map(|name| PathBuf::from("/dev/input").join(name))
             .collect();
-        assert_eq!(found[0].nodes, all);
         // event28 is the boot keyboard, and it is where the V2 Pro's keys arrive.
-        assert_eq!(grab_targets(&found[0]), all.as_slice());
+        assert_eq!(found[0].nodes, all);
         assert_eq!(
             found[0].gamepad_nodes,
             vec![PathBuf::from("/dev/input/event6")]
@@ -701,10 +670,9 @@ B: REL=903
             .iter()
             .map(|name| PathBuf::from("/dev/input").join(name))
             .collect();
-        assert_eq!(found[0].nodes, all);
         // event28 carries the 20 keys, event30 the wheel, and event27, the
         // boot keyboard, the stick's four directions and the mode button.
-        assert_eq!(grab_targets(&found[0]), all.as_slice());
+        assert_eq!(found[0].nodes, all);
         assert!(found[0].gamepad_nodes.is_empty());
     }
 
@@ -740,17 +708,25 @@ B: REL=903
                 PathBuf::from("/dev/input/event272"),
             ]
         );
+    }
+
+    /// OpenRazer puts the V2 in driver mode, and the keys then arrive on the
+    /// extra-keys node. In normal device mode the same keys arrive on the
+    /// boot keyboard, so the daemon must hold that node too.
+    #[test]
+    fn v2_grabs_its_boot_keyboard_for_normal_device_mode() {
+        let found = parse_proc_input_devices(PROC_V2_AND_NAGA);
         assert_eq!(
-            grab_targets(&found[0]),
-            &[
-                PathBuf::from("/dev/input/event271"),
-                PathBuf::from("/dev/input/event272"),
-            ]
+            node_role_from_proc_block(PROC_V2_AND_NAGA.split("\n\n").nth(1).unwrap()),
+            NodeRole::BootKeyboard
         );
+        assert!(found[0]
+            .nodes
+            .contains(&PathBuf::from("/dev/input/event270")));
     }
 
     #[test]
-    fn extra_keys_and_mouse_are_remap_targets_boot_kbd_is_not() {
+    fn proc_blocks_are_classified_by_node_role() {
         assert_eq!(
             node_role_from_proc_block(
                 "H: Handlers=sysrq kbd leds event270\nB: EV=120013\nB: LED=7\n"

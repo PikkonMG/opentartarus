@@ -8,7 +8,7 @@ use opentartarus_core::paths::Paths;
 use opentartarus_core::record::{RecordOutcome, Recorder};
 use opentartarus_core::remap::RemapEngine;
 use opentartarus_core::store::{
-    copy_on_apply, delete_user_profile, list_user_profile_ids, read_user_profile,
+    copy_on_apply, delete_user_profile, list_user_profile_ids, read_active_id, read_user_profile,
     revert_to_shipped, write_active_id, write_profile, write_stick_rotation,
 };
 use opentartarus_core::types::{
@@ -121,17 +121,51 @@ fn user_profile_exists(paths: &Paths, id: &str) -> bool {
     paths.profiles_dir.join(format!("{id}.json")).exists()
 }
 
+/// A user's profile file, or none when it cannot be read. The file may be
+/// damaged, or written by a newer build. It is logged and left where it is:
+/// one such file must not take every other profile out of the list.
+fn readable_user_profile(paths: &Paths, id: &str) -> Option<Profile> {
+    match read_user_profile(paths, id) {
+        Ok(profile) => Some(profile),
+        Err(code) => {
+            crate::log::write(&code.log_line(Some(id)));
+            None
+        }
+    }
+}
+
+/// The id of every custom profile file, readable or not.
+fn custom_profile_ids(paths: &Paths) -> Result<Vec<String>, ErrorCode> {
+    Ok(list_user_profile_ids(paths)?
+        .into_iter()
+        .filter(|id| !is_shipped(id))
+        .collect())
+}
+
+/// Every custom profile that can be read, with the id its file is found by.
+fn readable_custom_profiles(paths: &Paths) -> Result<Vec<(String, Profile)>, ErrorCode> {
+    Ok(custom_profile_ids(paths)?
+        .into_iter()
+        .filter_map(|id| readable_user_profile(paths, &id).map(|profile| (id, profile)))
+        .collect())
+}
+
 /// Shipped profiles first, in pack order, then every custom profile found in
 /// the user's directory. A shipped profile can be reverted but not deleted; a
-/// custom one is the reverse.
+/// custom one is the reverse. A shipped profile whose user copy cannot be
+/// read is listed from the pack, and "Revert to shipped" repairs the copy.
 fn list_profiles<L: LightingClient>(state: &DaemonState<L>) -> Result<Value, ErrorCode> {
     let mut profiles = Vec::with_capacity(SHIPPED_IDS.len());
     for id in SHIPPED_IDS {
         let user_exists = user_profile_exists(&state.paths, id);
-        let profile = if user_exists {
-            read_user_profile(&state.paths, id)?
+        let user_copy = if user_exists {
+            readable_user_profile(&state.paths, id)
         } else {
-            shipped_profile(id)?
+            None
+        };
+        let profile = match user_copy {
+            Some(profile) => profile,
+            None => shipped_profile(id)?,
         };
         profiles.push(profile_row(
             state,
@@ -143,11 +177,7 @@ fn list_profiles<L: LightingClient>(state: &DaemonState<L>) -> Result<Value, Err
             },
         ));
     }
-    for id in list_user_profile_ids(&state.paths)? {
-        if is_shipped(&id) {
-            continue;
-        }
-        let profile = read_user_profile(&state.paths, &id)?;
+    for (_, profile) in readable_custom_profiles(&state.paths)? {
         profiles.push(profile_row(state, &profile, PROFILE_SOURCE_USER));
     }
     Ok(json!({ "profiles": profiles }))
@@ -263,6 +293,18 @@ fn activate<L: LightingClient>(state: &mut DaemonState<L>, id: &str) -> Result<V
     state.active_id = Some(id.to_owned());
     apply_lighting_soft(state, &profile.lighting)?;
     Ok(json!({ "id": id }))
+}
+
+/// Makes the profile that was live when the daemon last ran live again. A
+/// profile of the user's own counts as much as a shipped one. With nothing
+/// saved yet, nothing is applied.
+pub fn restore_active_profile<L: LightingClient>(
+    state: &mut DaemonState<L>,
+) -> Result<(), ErrorCode> {
+    match read_active_id(&state.paths)? {
+        Some(id) => activate(state, &id).map(|_| ()),
+        None => Ok(()),
+    }
 }
 
 fn set_binding<L: LightingClient>(
@@ -436,7 +478,7 @@ fn create_profile<L: LightingClient>(
         .or_else(|| state.active_id.clone())
         .unwrap_or_else(|| CREATE_FALLBACK_SOURCE.to_owned());
 
-    let id = profile_id_for_name(&name, &profile_ids_in_order(state)?);
+    let id = profile_id_for_name(&name, &taken_profile_ids(&state.paths)?);
 
     let mut profile = load_user_copy(state, &source_id)?;
     profile.id = id.clone();
@@ -490,17 +532,26 @@ fn delete_profile<L: LightingClient>(
     Ok(json!({ "id": id, "active_id": state.active_id }))
 }
 
+fn shipped_ids() -> Vec<String> {
+    SHIPPED_IDS.iter().map(|id| (*id).to_owned()).collect()
+}
+
+/// Every id a new profile must not collide with: the pack, and every custom
+/// file. An unreadable file counts too, or the new profile would overwrite it.
+fn taken_profile_ids(paths: &Paths) -> Result<Vec<String>, ErrorCode> {
+    let mut ids = shipped_ids();
+    ids.extend(custom_profile_ids(paths)?);
+    Ok(ids)
+}
+
 /// Every profile id the daemon lists, in list order: shipped first in pack
-/// order, then custom. What `NextProfile` steps through, and what a new
-/// profile's id must not collide with.
-fn profile_ids_in_order<L: LightingClient>(
-    state: &DaemonState<L>,
-) -> Result<Vec<String>, ErrorCode> {
-    let mut ids: Vec<String> = SHIPPED_IDS.iter().map(|id| (*id).to_owned()).collect();
+/// order, then custom. What `NextProfile` steps through.
+fn profile_ids_in_order(paths: &Paths) -> Result<Vec<String>, ErrorCode> {
+    let mut ids = shipped_ids();
     ids.extend(
-        list_user_profile_ids(&state.paths)?
+        readable_custom_profiles(paths)?
             .into_iter()
-            .filter(|id| !is_shipped(id)),
+            .map(|(id, _)| id),
     );
     Ok(profile_row_order(&ids))
 }
@@ -508,7 +559,7 @@ fn profile_ids_in_order<L: LightingClient>(
 /// The profile after the active one in list order, wrapping at the end.
 /// With nothing applied, the first profile.
 fn next_profile_id<L: LightingClient>(state: &DaemonState<L>) -> Result<String, ErrorCode> {
-    let ids = profile_ids_in_order(state)?;
+    let ids = profile_ids_in_order(&state.paths)?;
     if ids.is_empty() {
         return Err(ErrorCode::NotFound);
     }
@@ -572,6 +623,33 @@ mod tests {
             grab_conflict: None,
             stick_rotation_deg: 0,
         }
+    }
+
+    /// A daemon that starts again must come back on the profile the player
+    /// left it on, and a profile of their own counts as much as a shipped one.
+    #[test]
+    fn restore_makes_a_custom_profile_live_again_after_a_restart() {
+        let mut first = state();
+        let created = handle_request(
+            &mut first,
+            Method::CreateProfile,
+            json!({"name": "Mine"}),
+            0,
+        )
+        .unwrap();
+        let id = created["id"].as_str().unwrap().to_owned();
+
+        let mut restarted = state();
+        restarted.paths = first.paths.clone();
+        restore_active_profile(&mut restarted).unwrap();
+        assert_eq!(restarted.active_id.as_deref(), Some(id.as_str()));
+    }
+
+    #[test]
+    fn restore_with_nothing_saved_applies_nothing() {
+        let mut st = state();
+        restore_active_profile(&mut st).unwrap();
+        assert_eq!(st.active_id, None);
     }
 
     #[test]
@@ -803,6 +881,52 @@ mod tests {
         assert_eq!(err, ErrorCode::InvalidProfile);
         let err = handle_request(&mut st, Method::CreateProfile, json!({}), 0).unwrap_err();
         assert_eq!(err, ErrorCode::InvalidProfile);
+    }
+
+    const UNREADABLE_PROFILE: &str = "{ not a profile";
+
+    fn write_unreadable_profile(st: &DaemonState<RecordingLighting>, id: &str) {
+        std::fs::create_dir_all(&st.paths.profiles_dir).unwrap();
+        std::fs::write(
+            st.paths.profiles_dir.join(format!("{id}.json")),
+            UNREADABLE_PROFILE,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn one_unreadable_profile_file_does_not_hide_the_others() {
+        let mut st = state();
+        let mine = create(&mut st, "Mine");
+        write_unreadable_profile(&st, "broken");
+        write_unreadable_profile(&st, "dota-2");
+        let ids = row_ids(&mut st);
+        assert_eq!(ids.len(), SHIPPED_IDS.len() + 1);
+        assert!(ids.contains(&mine));
+        assert!(ids.contains(&"dota-2".to_owned()));
+        assert!(!ids.contains(&"broken".to_owned()));
+    }
+
+    #[test]
+    fn next_profile_steps_past_an_unreadable_file() {
+        let mut st = state();
+        write_unreadable_profile(&st, "broken");
+        let last = SHIPPED_IDS[SHIPPED_IDS.len() - 1];
+        handle_request(&mut st, Method::ApplyProfile, json!({"id": last}), 0).unwrap();
+        let live = switch_profile(&mut st, &ProfileSwitch::Next).unwrap();
+        assert_eq!(live, SHIPPED_IDS[0]);
+    }
+
+    /// The unreadable file may be a profile from a newer build. A new
+    /// profile must not take its id, because that would overwrite it.
+    #[test]
+    fn a_new_profile_never_takes_the_id_of_an_unreadable_file() {
+        let mut st = state();
+        write_unreadable_profile(&st, "mine");
+        let id = create(&mut st, "Mine");
+        assert_ne!(id, "mine");
+        let kept = std::fs::read_to_string(st.paths.profiles_dir.join("mine.json")).unwrap();
+        assert_eq!(kept, UNREADABLE_PROFILE);
     }
 
     #[test]
