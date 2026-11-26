@@ -1,13 +1,16 @@
 use crate::app::{App, Message};
 use crate::theme;
-use crate::view::widgets::{accent_text_button, quiet_button};
+use crate::view::widgets::{quiet_button, quiet_text_button};
 use iced::widget::{button, container, row, text, Space};
 use iced::{Background, Border, Element, Length, Theme};
 
 /// The release notice sits under the banner bar and never replaces it: a
 /// device problem is the more urgent news, and both can be true at once.
 /// It carries the accent colour rather than the danger colour, because a
-/// new release is not a fault.
+/// new release is not a fault. The release button is the filled one and
+/// dismissal is plain text, because reading the release is the action the
+/// notice exists for; the accent cap is left to the banner, which has the
+/// more urgent news when both bars are drawn.
 pub fn update_bar(app: &App) -> Element<'_, Message> {
     let Some(tag) = &app.update_tag else {
         return Space::with_height(0).into();
@@ -22,10 +25,10 @@ pub fn update_bar(app: &App) -> Element<'_, Message> {
         text(copy).size(theme::TEXT_BODY),
         button(text(theme::BUTTON_OPEN_RELEASES))
             .on_press(Message::OpenReleases)
-            .style(accent_text_button),
+            .style(quiet_button),
         button(text(theme::BUTTON_DISMISS_UPDATE))
             .on_press(Message::DismissUpdate)
-            .style(quiet_button),
+            .style(quiet_text_button),
     ]
     .spacing(theme::SPACE_SM)
     .align_y(iced::Alignment::Center);

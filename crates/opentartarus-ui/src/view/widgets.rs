@@ -306,6 +306,21 @@ pub fn accent_text_button(_theme: &Theme, status: button::Status) -> button::Sty
     )
 }
 
+/// Neutral text with no fill: the lesser of two actions offered side by
+/// side, where a filled cap would pull the eye away from the one the reader
+/// is most likely to want.
+pub fn quiet_text_button(_theme: &Theme, status: button::Status) -> button::Style {
+    control(
+        Color::TRANSPARENT,
+        theme::COLOR_KEY_HOVER,
+        theme::COLOR_TEXT_DIM,
+        Color::TRANSPARENT,
+        theme::RADIUS_CONTROL,
+        theme::BORDER_NONE,
+        status,
+    )
+}
+
 /// A title-bar control. Quiet: just the glyph at rest, a soft fill under the
 /// pointer. The caps are for things that map to keys on the device; window
 /// controls are not, so they stay out of the way.
