@@ -2,15 +2,17 @@ OpenTartarus is a Linux app for the Razer Tartarus V2, Tartarus Pro and Tartarus
 
 This is a test build. It works with a Tartarus V2 and a Tartarus V2 Pro on Wayland, and a contributor reports it working with a Tartarus Pro. It has not been through many distros. If something does not work, please say so, and say which pad and which distro you have. CONTRIBUTING.md lists the rest of what helps.
 
-## What changed in 0.2.2
+## What changed in 0.2.3
 
-Sorry for the quick turnaround. This is a hot fix on top of 0.2.1.
+The Tartarus V2 keeps its remaps in driver mode and in normal device mode, so it no longer depends on OpenRazer to hold the pad in driver mode. Remaps also work on a V2 with no OpenRazer installed.
 
-"Record a key" now picks up Caps Lock, along with Num Lock, Scroll Lock, Print Screen, Pause and the three volume keys. The numpad records as the numpad, so numpad 1 stays numpad 1 instead of arriving as the 1 on the top row. Keycaps read the symbol too, so a key bound to `-` shows `-` and not `Minus`.
+A key you are holding when the profile changes comes back up as the key it went down as, and unplugging the pad lets go of every key.
 
-The app also asks GitHub once, when the window opens, whether a newer version is out, and shows a line under the header if there is one. The request carries the program name and version and nothing else, and a check that fails says nothing at all. To make no request, set `OPENTARTARUS_NO_UPDATE_CHECK=1`.
+The daemon starts on the profile you left it on, including one you made yourself. It also shuts down cleanly when your session's service manager stops it.
 
-Thanks to colincci for the report (#7).
+A profile file the app cannot read is skipped, and the other profiles still show in the list. The file stays where it is.
+
+Thanks to colincci for the report and the diagnosis (#9).
 
 ## What it does
 
