@@ -39,6 +39,18 @@ struct MacroPlay {
     due_ms: u64,
 }
 
+/// What a key did when it went down. Its release undoes exactly this, and
+/// not whatever the key is bound to by then: a profile change or a new
+/// binding while the key is down would otherwise leave the old key held.
+#[derive(Debug, Clone)]
+enum Held {
+    Action(Action),
+    /// An unbound key, passed on under its own code.
+    PassedOn {
+        code: u16,
+    },
+}
+
 pub fn allow_grab(vid: u16, pid: u16) -> bool {
     vid == USB_VID_RAZER && DeviceModel::from_usb_pid(pid).is_some()
 }
@@ -76,6 +88,9 @@ pub struct RemapEngine {
     macro_busy: bool,
     macro_play: Option<MacroPlay>,
     hold: Option<(KeyId, u64, u32)>,
+    /// The keys that are down now. The stick's directions are not here:
+    /// they are held as `analog_*` state and let go by `release_stick`.
+    held: BTreeMap<KeyId, Held>,
     profile_switch: Option<ProfileSwitch>,
     analog_x: i32,
     analog_y: i32,
@@ -130,6 +145,7 @@ impl RemapEngine {
             macro_busy: false,
             macro_play: None,
             hold: None,
+            held: BTreeMap::new(),
             profile_switch: None,
             analog_x: GAMEPAD_AXIS_CENTER,
             analog_y: GAMEPAD_AXIS_CENTER,
@@ -164,7 +180,7 @@ impl RemapEngine {
 
     /// Lets go of every held stick direction and centres the virtual
     /// controller. The releases go out on the next `handle` or `tick`.
-    pub fn release_stick(&mut self) {
+    fn release_stick(&mut self) {
         let mut out = std::mem::take(&mut self.outbox);
         for id in STICK_DIRECTIONS {
             if !analog_pressed(self, id) {
@@ -177,6 +193,18 @@ impl RemapEngine {
         }
         self.emit_pad_stick(0.0, 0.0, &mut out);
         self.outbox = out;
+    }
+
+    /// Lets go of everything the pad holds down: every key, then the stick.
+    /// For an unplug, which brings no release from the pad. The releases go
+    /// out on the next `handle` or `tick`.
+    pub fn release_all(&mut self) {
+        let mut out = std::mem::take(&mut self.outbox);
+        for pressed in std::mem::take(&mut self.held).into_values() {
+            self.undo_press(&pressed, &mut out);
+        }
+        self.outbox = out;
+        self.release_stick();
     }
 
     /// Sends the owed releases, then reads the stick again if a change let
@@ -487,6 +515,13 @@ impl RemapEngine {
         sink: &mut impl EventSink,
         clock: &mut impl Clock,
     ) {
+        if value == KEY_UP {
+            if let Some(pressed) = self.held.remove(&key_id) {
+                self.undo_press(&pressed, sink);
+                return;
+            }
+        }
+        let is_key_press = ev.ev_type == EV_KEY && value == KEY_DOWN;
         match self.table.get(&key_id).cloned() {
             // The virtual devices have no axes and no gamepad buttons, so an
             // unbound stick, hat, thumb direction or gamepad button has
@@ -510,6 +545,9 @@ impl RemapEngine {
             }
             None if ev.ev_type == EV_ABS || key_id.is_stick() || key_id.is_thumb() => {}
             None => {
+                if is_key_press {
+                    self.held.insert(key_id, Held::PassedOn { code: ev.code });
+                }
                 sink.emit(Emitted {
                     keyboard: ev.ev_type == EV_KEY,
                     ev_type: ev.ev_type,
@@ -518,7 +556,12 @@ impl RemapEngine {
                 });
             }
             Some(action) => match value {
-                KEY_DOWN => self.play_press(key_id, &action, sink, clock),
+                KEY_DOWN => {
+                    self.play_press(key_id, &action, sink, clock);
+                    if is_key_press {
+                        self.held.insert(key_id, Held::Action(action));
+                    }
+                }
                 KEY_REPEAT => self.play_repeat(key_id, &action, sink, clock),
                 KEY_UP => self.play_release(&action, sink),
                 _ => {}
@@ -559,6 +602,13 @@ impl RemapEngine {
         _sink: &mut impl EventSink,
         _clock: &mut impl Clock,
     ) {
+    }
+
+    fn undo_press(&mut self, pressed: &Held, sink: &mut impl EventSink) {
+        match pressed {
+            Held::Action(action) => self.play_release(action, sink),
+            Held::PassedOn { code } => emit_key(sink, *code, KEY_UP),
+        }
     }
 
     fn play_release(&mut self, action: &Action, sink: &mut impl EventSink) {
@@ -730,7 +780,7 @@ mod tests {
         }
     }
 
-    fn engine_with(kp01: Action) -> RemapEngine {
+    fn profile_binding(key: KeyId, action: Action) -> Profile {
         let mut p = Profile {
             id: "t".into(),
             name: "t".into(),
@@ -748,10 +798,85 @@ mod tests {
             setup_note: None,
             shipped_revision: None,
         };
-        p.bindings.insert(KeyId::Kp01, kp01);
+        p.bindings.insert(key, action);
+        p
+    }
+
+    fn engine_with(kp01: Action) -> RemapEngine {
         let mut e = RemapEngine::new(DeviceModel::V2);
-        e.apply_profile(&p);
+        e.apply_profile(&profile_binding(KeyId::Kp01, kp01));
         e
+    }
+
+    fn key_action(key: KeyToken) -> Action {
+        Action::Key {
+            key,
+            modifiers: vec![],
+        }
+    }
+
+    fn key_edges(sink: &FakeSink) -> Vec<(u16, i32)> {
+        sink.0.iter().map(|x| (x.code, x.value)).collect()
+    }
+
+    /// A player holds a movement key and presses the profile-switch key. The
+    /// held key must come up as the key that went down, or it stays down
+    /// until some other keyboard presses it.
+    #[test]
+    fn a_key_held_across_a_profile_change_is_released_as_it_was_pressed() {
+        let mut e = engine_with(key_action(KeyToken::Q));
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        e.handle(press_kp01(), &mut s, &mut c);
+        e.apply_profile(&profile_binding(KeyId::Kp01, key_action(KeyToken::E)));
+        e.handle(
+            RawEvent {
+                value: KEY_UP,
+                ..press_kp01()
+            },
+            &mut s,
+            &mut c,
+        );
+        let q = crate::keymap::token_to_evdev(KeyToken::Q);
+        assert_eq!(key_edges(&s), vec![(q, KEY_DOWN), (q, KEY_UP)]);
+    }
+
+    #[test]
+    fn a_key_passed_on_unbound_is_released_as_itself_after_it_gets_a_binding() {
+        let mut e = RemapEngine::new(DeviceModel::V2);
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        let raw = press_kp01();
+        e.handle(raw, &mut s, &mut c);
+        e.apply_profile(&profile_binding(KeyId::Kp01, key_action(KeyToken::E)));
+        e.handle(
+            RawEvent {
+                value: KEY_UP,
+                ..raw
+            },
+            &mut s,
+            &mut c,
+        );
+        assert_eq!(
+            key_edges(&s),
+            vec![(raw.code, KEY_DOWN), (raw.code, KEY_UP)]
+        );
+    }
+
+    /// An unplug brings no release from the pad, so the engine must send it.
+    #[test]
+    fn release_all_lets_go_of_every_held_key_once() {
+        let mut e = engine_with(key_action(KeyToken::Q));
+        let mut s = FakeSink(vec![]);
+        let mut c = FakeClock { t: 0 };
+        e.handle(press_kp01(), &mut s, &mut c);
+        e.release_all();
+        assert!(e.has_timed_work());
+        e.tick(&mut s, &mut c);
+        e.release_all();
+        e.tick(&mut s, &mut c);
+        let q = crate::keymap::token_to_evdev(KeyToken::Q);
+        assert_eq!(key_edges(&s), vec![(q, KEY_DOWN), (q, KEY_UP)]);
     }
 
     fn press_kp01() -> RawEvent {
